@@ -1,0 +1,47 @@
+Plaintext
+Actúa como un Arquitecto de Software Senior y Diseñador de UX/UI experto en desarrollo de aplicaciones móviles/web securizadas y monetizables.
+
+Quiero crear y comercializar una aplicación llamada "Bóveda Digital" (Wallet de Documentos) diseñada para que los usuarios almacenen, organicen y consulten documentos importantes (pasaportes, cédula de identidad, tarjetas, cartas de residencia, títulos de vehículos, etc.) con acceso offline y cifrado local.
+
+---
+
+### 1. REQUERIMIENTO CLAVE DE INTEGRACIÓN Y ARQUITECTURA
+- **Autenticación Compatible:** La app debe integrar un sistema de autenticación de usuarios idéntico y 100% compatible con el backend de mi app existente de Halterofilia (API REST sobre HTTPS, tokens JWT / OAuth2, gestión de sesiones y almacenamiento seguro de credenciales en servidor).
+- **Procesamiento Seguro:** Toda la lógica de autenticación, validación de licencias y sincronización debe ejecutarse en el servidor backend (evitando lógica sensible expuesta exclusivamente en el cliente).
+
+---
+
+### 2. MECANISMOS DE COMERCIALIZACIÓN Y MONETIZACIÓN
+- **Licenciamiento y Planes de Suscripción:**
+  * Plan Gratuito/Trial: Límite de documentos o almacenamiento básico.
+  * Plan Pro / Premium: Documentos ilimitados, alertas de vencimiento, copias de seguridad cifradas en la nube y exportación avanzada.
+- **Validación de Licencia:** Integración del estado de suscripción/pago con el backend centralizado mediante llamadas autenticadas con JWT.
+- **Paz de espíritu comercial:** Preparado para pasarelas de pago (Stripe, In-App Purchases de Apple/Google).
+
+---
+
+### 3. FUNCIONALIDADES DEL PRODUCTO (MVP)
+1. **Seguridad y Accesibilidad:**
+   - Autenticación unificada vía Backend (Login / Registro / Token Refresh).
+   - Capa adicional local: Biometría (Face ID / Huella dactilar) o PIN para abrir la bóveda en el dispositivo.
+   - Cifrado de documentos en reposo (AES-256) antes de guardarlos o sincronizarlos.
+   - Funcionamiento y lectura 100% Offline.
+
+2. **Gestión de Documentos:**
+   - Categorías (Identidad, Vehículos, Finanzas, Residencia, Salud/Viajes).
+   - Escaneo de documentos con la cámara, ajuste de bordes y adjuntos en PDF/JPG.
+   - Vista rápida de campos estructurados (número de documento, fecha de caducidad, emisor).
+
+3. **Alertas y Notificaciones:**
+   - Recordatorios push/locales para vencimientos de pasaportes, licencias o revisiones técnicas.
+
+4. **Compartición Segura:**
+   - Generación de copias cifradas o enlaces temporales con clave para enviar a autoridades o gestores.
+
+---
+
+### 4. QUÉ NECESITO QUE GENERES
+1. **Flujo de Autenticación Unificado:** Diagrama o explicación de cómo el cliente (Frontend) se conecta al backend existente usando JWT para validar login y suscripción activa.
+2. **Modelo de Datos (JSON / DB Schema):** Estructura que relacione a los usuarios del backend existente con la tabla de licencias/suscripciones y los metadatos de sus documentos cifrados.
+3. **Estructura de Endpoints de la API:** Definición de los endpoints necesarios (POST /api/login, POST /api/documents, GET /api/user/subscription, etc.).
+4. **Prototipo de Código:** Código funcional para el cliente que maneje el flujo de login con

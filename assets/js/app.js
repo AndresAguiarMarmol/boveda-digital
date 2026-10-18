@@ -1,0 +1,1665 @@
+/**
+ * Bóveda Digital — Orquestador Principal de la Aplicación
+ * Manejo de Vistas, Cifrado Zero-Knowledge, Archivador Mueble Gavetero,
+ * Lectura, Impresión, Modificación y Eliminación de Documentos.
+ */
+
+class BovedaApp {
+  constructor() {
+    this.searchQuery = '';
+    this.unlockedDocuments = []; // Documentos descifrados en memoria durante la sesión activa
+    this.currentPinInput = '';
+    this.selectedDoc = null;
+    this.activeView = 'auth'; // 'auth' | 'pin-setup' | 'pin-lock' | 'dashboard'
+    this.isEditingCurrentDoc = false;
+    
+    // Estado de gavetas abiertas (por defecto la primera gaveta está abierta)
+    this.openDrawers = new Set(['identidad']);
+    
+    // Las 5 Gavetas Oficiales del Archivador de Bóveda (cada una con su paleta de color distintiva)
+    this.defaultCategories = {
+      identidad: { 
+        id: 'identidad', 
+        drawerNumber: 1, 
+        label: 'Identidad', 
+        subtitle: 'Cédulas, Pasaportes, DNI y Credenciales Oficiales', 
+        icon: 'user-check', 
+        color: '#06b6d4' // Cyan Eléctrico de Seguridad
+      },
+      vehiculos: { 
+        id: 'vehiculos', 
+        drawerNumber: 2, 
+        label: 'Vehículos', 
+        subtitle: 'Licencias de Conducir, Títulos de Propiedad y Seguros', 
+        icon: 'car', 
+        color: '#10b981' // Verde Esmeralda Vial
+      },
+      finanzas: { 
+        id: 'finanzas', 
+        drawerNumber: 3, 
+        label: 'Finanzas', 
+        subtitle: 'Tarjetas de Crédito/Débito, Cuentas y Certificaciones', 
+        icon: 'credit-card', 
+        color: '#f59e0b' // Ámbar / Oro Financiero
+      },
+      residencia: { 
+        id: 'residencia', 
+        drawerNumber: 4, 
+        label: 'Residencia', 
+        subtitle: 'Contratos de Alquiler, Facturas de Servicios y Empadronamiento', 
+        icon: 'home', 
+        color: '#8b5cf6' // Púrpura / Violeta Notarial
+      },
+      salud: { 
+        id: 'salud', 
+        drawerNumber: 5, 
+        label: 'Salud y Viajes', 
+        subtitle: 'Carnets de Vacunación, Seguros Médicos y Visados', 
+        icon: 'activity', 
+        color: '#ec4899' // Rosa / Magenta Médico
+      }
+    };
+    this.categories = { ...this.defaultCategories };
+  }
+
+  async init() {
+    this.bindEvents();
+    
+    // Evaluar estado de sesión
+    const authState = await window.vaultAuth.init();
+    if (authState.status === 'LOCKED') {
+      const hasPin = await window.vaultAuth.hasConfiguredPin();
+      if (hasPin) {
+        this.switchView('pin-lock');
+      } else {
+        this.switchView('pin-setup');
+      }
+    } else {
+      this.switchView('auth');
+    }
+
+    // Inicializar iconos
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  }
+
+  /**
+   * Cambia la vista activa del cliente
+   */
+  switchView(viewName) {
+    this.activeView = viewName;
+    const views = ['auth-view', 'pin-setup-view', 'pin-lock-view', 'dashboard-view'];
+    views.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+
+    const activeEl = document.getElementById(`${viewName}-view`);
+    if (activeEl) {
+      activeEl.classList.remove('hidden');
+    }
+
+    if (viewName === 'pin-lock') {
+      this.currentPinInput = '';
+      this.updatePinDots();
+      const userEmailEl = document.getElementById('lock-user-email');
+      if (userEmailEl && window.vaultAuth.currentUser) {
+        userEmailEl.textContent = window.vaultAuth.currentUser.email;
+      }
+    } else if (viewName === 'dashboard') {
+      this.renderDashboardHeader();
+      this.loadAndRenderDocuments();
+    }
+
+    if (window.lucide) {
+      setTimeout(() => window.lucide.createIcons(), 50);
+    }
+  }
+
+  /**
+   * Actualiza el encabezado del dashboard con datos del usuario y suscripción
+   */
+  renderDashboardHeader() {
+    const user = window.vaultAuth.currentUser;
+    if (!user) return;
+
+    const emailEl = document.getElementById('dash-user-email');
+    if (emailEl) emailEl.textContent = user.email;
+
+    const planBadge = document.getElementById('dash-plan-badge');
+    const isPro = user.subscription && user.subscription.plan === 'pro';
+    if (planBadge) {
+      if (isPro) {
+        planBadge.className = 'badge-status badge-pro';
+        planBadge.innerHTML = '<i data-lucide="crown" class="w-3.5 h-3.5"></i> Plan PRO Ilimitado';
+      } else {
+        planBadge.className = 'badge-status badge-valid';
+        planBadge.innerHTML = '<i data-lucide="shield" class="w-3.5 h-3.5"></i> Plan Gratuito (Máx 5 docs)';
+      }
+    }
+
+    const upgradeBtn = document.getElementById('btn-header-upgrade');
+    if (upgradeBtn) {
+      upgradeBtn.style.display = isPro ? 'none' : 'inline-flex';
+    }
+  }
+
+  /**
+   * Carga los documentos desde IndexedDB y los descifra con la clave maestra en memoria
+   */
+  async loadAndRenderDocuments() {
+    if (!window.vaultAuth.masterKey) {
+      this.showToast('Bóveda bloqueada. Ingrese su PIN.', 'warning');
+      this.switchView('pin-lock');
+      return;
+    }
+
+    const user = window.vaultAuth.currentUser;
+
+    // Cargar gavetas personalizadas instaladas por el usuario
+    try {
+      const savedCustom = await window.vaultStorage.getSetting('customDrawers_' + user.sub);
+      this.categories = {
+        ...this.defaultCategories,
+        ...(savedCustom || {})
+      };
+      this.updateCategoryDropdowns();
+    } catch (err) {
+      console.warn('[BovedaApp] Error al cargar gavetas personalizadas:', err);
+    }
+
+    let rawDocs = await window.vaultStorage.getAllDocuments(user.sub);
+
+    // Si la bóveda está vacía, pre-sembrar automáticamente expedientes de muestra cifrados con adjuntos digitales
+    if (rawDocs.length === 0) {
+      await this._seedInitialDemoDocuments(user.sub);
+      rawDocs = await window.vaultStorage.getAllDocuments(user.sub);
+    }
+
+    this.unlockedDocuments = [];
+
+    for (const raw of rawDocs) {
+      try {
+        const decryptedPayload = await window.vaultCrypto.decrypt(
+          window.vaultAuth.masterKey,
+          raw.encrypted_payload,
+          raw.iv
+        );
+        this.unlockedDocuments.push({
+          id: raw.id,
+          category: raw.category || 'identidad',
+          title: raw.title,
+          ...decryptedPayload,
+          created_at: raw.created_at,
+          updated_at: raw.updated_at,
+          is_synced: raw.is_synced
+        });
+      } catch (err) {
+        console.error('[BovedaApp] Error al descifrar documento:', raw.id, err);
+      }
+    }
+
+    this.renderMetrics();
+    this.renderCabinet();
+  }
+
+  /**
+   * Sincroniza las opciones de todas las gavetas en los selectores de los modales
+   */
+  updateCategoryDropdowns() {
+    const optionsHtml = Object.values(this.categories).map(cat => 
+      `<option value="${cat.id}">Gaveta ${cat.drawerNumber}: ${cat.label}</option>`
+    ).join('');
+
+    const newDocSelect = document.getElementById('new-doc-category-select');
+    if (newDocSelect) {
+      const currentVal = newDocSelect.value;
+      newDocSelect.innerHTML = optionsHtml;
+      if (currentVal && this.categories[currentVal]) {
+        newDocSelect.value = currentVal;
+      }
+    }
+
+    const editDocSelect = document.getElementById('edit-category');
+    if (editDocSelect) {
+      const currentVal = editDocSelect.value;
+      editDocSelect.innerHTML = optionsHtml;
+      if (currentVal && this.categories[currentVal]) {
+        editDocSelect.value = currentVal;
+      }
+    }
+  }
+
+  /**
+   * Calcula y dibuja métricas de vencimiento y cuotas
+   */
+  renderMetrics() {
+    const now = new Date();
+    const thirtyDaysAhead = new Date(now.getTime() + 30 * 86400000);
+
+    let validCount = 0;
+    let warningCount = 0;
+    let expiredCount = 0;
+
+    this.unlockedDocuments.forEach(doc => {
+      if (!doc.expiry_date) {
+        validCount++;
+        return;
+      }
+      const exp = new Date(doc.expiry_date);
+      if (exp < now) {
+        expiredCount++;
+      } else if (exp <= thirtyDaysAhead) {
+        warningCount++;
+      } else {
+        validCount++;
+      }
+    });
+
+    const elTotal = document.getElementById('stat-total-docs');
+    const elValid = document.getElementById('stat-valid-docs');
+    const elWarning = document.getElementById('stat-warning-docs');
+    const elExpired = document.getElementById('stat-expired-docs');
+
+    if (elTotal) elTotal.textContent = this.unlockedDocuments.length;
+    if (elValid) elValid.textContent = validCount;
+    if (elWarning) elWarning.textContent = warningCount;
+    if (elExpired) elExpired.textContent = expiredCount;
+
+    // Actualizar cuota de almacenamiento
+    const user = window.vaultAuth.currentUser;
+    const isPro = user && user.subscription && user.subscription.plan === 'pro';
+    const quotaText = document.getElementById('quota-text');
+    const quotaBar = document.getElementById('quota-bar');
+    if (quotaText && quotaBar) {
+      if (isPro) {
+        quotaText.textContent = `${this.unlockedDocuments.length} expedientes (Ilimitado)`;
+        quotaBar.style.width = '100%';
+        quotaBar.className = 'h-1.5 rounded-full bg-amber-400';
+      } else {
+        const pct = Math.min(100, (this.unlockedDocuments.length / 5) * 100);
+        quotaText.textContent = `${this.unlockedDocuments.length} de 5 expedientes`;
+        quotaBar.style.width = `${pct}%`;
+        quotaBar.className = pct >= 100 ? 'h-1.5 rounded-full bg-rose-500' : 'h-1.5 rounded-full bg-emerald-500';
+      }
+    }
+  }
+
+  /**
+   * Alterna el estado de apertura/cierre de una gaveta específica
+   */
+  toggleDrawer(categoryKey) {
+    if (this.openDrawers.has(categoryKey)) {
+      this.openDrawers.delete(categoryKey);
+    } else {
+      this.openDrawers.add(categoryKey);
+    }
+    this.renderCabinet();
+  }
+
+  /**
+   * Abre o cierra todas las gavetas del archivador simultáneamente
+   */
+  toggleAllDrawers(openAll) {
+    if (openAll) {
+      Object.keys(this.categories).forEach(k => this.openDrawers.add(k));
+    } else {
+      this.openDrawers.clear();
+    }
+    this.renderCabinet();
+  }
+
+  /**
+   * Renderiza el Mueble Gavetero Inteligente con sus gavetas coloreadas y sus carpetas interiores
+   */
+  renderCabinet() {
+    const container = document.getElementById('cabinet-drawers-container');
+    if (!container) return;
+
+    const now = new Date();
+    const thirtyDays = new Date(now.getTime() + 30 * 86400000);
+    const q = this.searchQuery.toLowerCase().trim();
+
+    // Si el usuario está buscando, abrir automáticamente gavetas con coincidencias
+    if (q) {
+      Object.keys(this.categories).forEach(catKey => {
+        const hasMatch = this.unlockedDocuments.some(d => 
+          d.category === catKey && (
+            (d.title && d.title.toLowerCase().includes(q)) ||
+            (d.doc_number && d.doc_number.toLowerCase().includes(q)) ||
+            (d.issuer && d.issuer.toLowerCase().includes(q)) ||
+            (d.tags && d.tags.toLowerCase().includes(q)) ||
+            (d.notes && d.notes.toLowerCase().includes(q))
+          )
+        );
+        if (hasMatch) {
+          this.openDrawers.add(catKey);
+        }
+      });
+    }
+
+    const drawerKeys = Object.keys(this.categories);
+
+    const summaryText = document.getElementById('cabinet-summary-text');
+    if (summaryText) {
+      summaryText.textContent = `${this.unlockedDocuments.length} expedientes archivados • ${this.openDrawers.size} de ${drawerKeys.length} gavetas abiertas`;
+    }
+
+    container.innerHTML = drawerKeys.map(catKey => {
+      const cat = this.categories[catKey];
+      if (!cat) return '';
+      const allCategoryDocs = this.unlockedDocuments.filter(d => d.category === catKey);
+      
+      // Filtrar por buscador
+      let visibleDocs = allCategoryDocs;
+      if (q) {
+        visibleDocs = allCategoryDocs.filter(d =>
+          (d.title && d.title.toLowerCase().includes(q)) ||
+          (d.doc_number && d.doc_number.toLowerCase().includes(q)) ||
+          (d.issuer && d.issuer.toLowerCase().includes(q)) ||
+          (d.tags && d.tags.toLowerCase().includes(q)) ||
+          (d.notes && d.notes.toLowerCase().includes(q))
+        );
+      }
+
+      // Evaluar estado de alertas dentro de la gaveta
+      let hasExpired = false;
+      let hasWarning = false;
+      allCategoryDocs.forEach(d => {
+        if (d.expiry_date) {
+          const exp = new Date(d.expiry_date);
+          if (exp < now) hasExpired = true;
+          else if (exp <= thirtyDays) hasWarning = true;
+        }
+      });
+
+      let ledClass = 'drawer-led';
+      let ledBadge = '';
+      if (hasExpired) {
+        ledClass = 'drawer-led danger';
+        ledBadge = '<span class="text-[10px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">Vencido</span>';
+      } else if (hasWarning) {
+        ledClass = 'drawer-led warning';
+        ledBadge = '<span class="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">Por vencer</span>';
+      }
+
+      const isOpen = this.openDrawers.has(catKey);
+      const color = cat.color || '#10b981';
+
+      return `
+        <div class="drawer-unit ${isOpen ? 'is-open' : ''}" style="--drawer-color: ${color};">
+          <!-- Frente de la Gaveta (Cajón con color distintivo) -->
+          <div class="drawer-front flex flex-col md:flex-row md:items-center justify-between gap-4" onclick="window.bovedaApp.toggleDrawer('${catKey}')">
+            <!-- Lado Izquierdo: Cerradura, Icono y Etiqueta -->
+            <div class="flex items-center gap-3.5">
+              <div class="${ledClass}" title="Indicador de seguridad de la gaveta"></div>
+              
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner transition-transform" style="background: ${color}18; color: ${color}; border: 1px solid ${color}35;">
+                <i data-lucide="${cat.icon}" class="w-5 h-5"></i>
+              </div>
+
+              <div>
+                <div class="flex items-center gap-2">
+                  <div class="drawer-label-holder">
+                    <span class="text-[10px] uppercase font-bold font-mono tracking-wider" style="color: ${color};">Gaveta ${cat.drawerNumber}</span>
+                    <span class="font-bold text-slate-100 text-sm tracking-wide">${this.escapeHtml(cat.label)}</span>
+                  </div>
+                  ${cat.isCustom ? `
+                    <span class="text-[9px] uppercase font-mono px-2 py-0.5 rounded-md border font-semibold" style="color: ${color}; border-color: ${color}40; background: ${color}10;">Personalizada</span>
+                  ` : ''}
+                  ${ledBadge}
+                </div>
+                <p class="text-xs text-slate-400 mt-0.5 hidden sm:block">${this.escapeHtml(cat.subtitle)}</p>
+              </div>
+            </div>
+
+            <!-- Centro: Manija Metálica del Cajón con reflejo tonal -->
+            <div class="hidden lg:flex items-center justify-center flex-1 px-8">
+              <div class="drawer-handle" title="Tirador metálico reforzado"></div>
+            </div>
+
+            <!-- Lado Derecho: Contador de Fichas, Desinstalar y Flecha de Apertura -->
+            <div class="flex items-center justify-between md:justify-end gap-2.5 w-full md:w-auto">
+              <span class="text-xs font-mono font-semibold px-3 py-1 rounded-full border shadow-sm" style="color: ${color}; border-color: ${color}35; background: ${color}0d;">
+                ${allCategoryDocs.length} ${allCategoryDocs.length === 1 ? 'expediente' : 'expedientes'}
+              </span>
+
+              ${cat.isCustom ? `
+                <button type="button" title="Desinstalar esta gaveta personalizada" onclick="event.stopPropagation(); window.bovedaApp.deleteCustomDrawer('${catKey}')" class="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/5 hover:border-rose-500/30 transition-all">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              ` : ''}
+
+              <div class="flex items-center gap-1.5 text-xs text-slate-400 font-medium ml-1">
+                <span class="hidden sm:inline">${isOpen ? 'Cerrar gaveta' : 'Abrir gaveta'}</span>
+                <i data-lucide="${isOpen ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4 transition-transform" style="color: ${color};"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Interior de la Gaveta (Riel de Carpetas e Índice de Documentos) -->
+          <div class="drawer-interior">
+            <div class="folder-rail">
+              <!-- Barra de herramientas interior de la gaveta -->
+              <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/5 text-xs text-slate-400">
+                <span class="font-semibold text-slate-300 flex items-center gap-1.5">
+                  <i data-lucide="folder-open" class="w-4 h-4" style="color: ${color};"></i>
+                  Índice de Expedientes en Gaveta ${cat.drawerNumber} (${this.escapeHtml(cat.label)}):
+                </span>
+                <button type="button" onclick="event.stopPropagation(); window.bovedaApp.openNewDocumentModal('${catKey}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm" style="background: ${color}15; color: ${color}; border: 1px solid ${color}40;">
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i> Archivar en esta Gaveta
+                </button>
+              </div>
+
+              <!-- Lista de Carpetas / Fichas -->
+              <div class="space-y-3">
+                ${visibleDocs.length === 0 ? `
+                  <div class="py-8 px-4 text-center rounded-xl bg-slate-900/40 border border-white/5 text-slate-400">
+                    <p class="text-sm font-medium text-slate-300">Esta gaveta está vacía${q ? ' para la búsqueda actual' : ''}.</p>
+                    <p class="text-xs text-slate-500 mt-1">Archiva documentos de ${this.escapeHtml(cat.label.toLowerCase())} aquí para mantenerlos protegidos.</p>
+                    <button type="button" onclick="event.stopPropagation(); window.bovedaApp.openNewDocumentModal('${catKey}')" class="mt-3 px-3 py-1.5 rounded-lg text-slate-950 font-bold text-xs inline-flex items-center gap-1.5 transition-transform hover:scale-105 shadow-md" style="background: ${color};">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i> Archivar Primer Documento
+                    </button>
+                  </div>
+                ` : visibleDocs.map(doc => {
+                  let statusBadge = '<span class="badge-status badge-valid"><i data-lucide="check-circle" class="w-3 h-3"></i> Vigente</span>';
+                  if (doc.expiry_date) {
+                    const exp = new Date(doc.expiry_date);
+                    if (exp < now) {
+                      statusBadge = '<span class="badge-status badge-expired"><i data-lucide="alert-octagon" class="w-3 h-3"></i> Vencido</span>';
+                    } else if (exp <= thirtyDays) {
+                      const daysLeft = Math.ceil((exp - now) / 86400000);
+                      statusBadge = `<span class="badge-status badge-warning"><i data-lucide="clock" class="w-3 h-3"></i> Vence en ${daysLeft}d</span>`;
+                    }
+                  }
+
+                  return `
+                    <div class="folder-card p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 group" onclick="window.bovedaApp.openDocumentDetail('${doc.id}')">
+                      <div>
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="folder-tab" style="color: ${color};">
+                            <i data-lucide="${cat.icon}" class="w-3 h-3" style="color: ${color};"></i> ${this.escapeHtml(cat.label)}
+                          </span>
+                          ${doc.attachment ? `
+                            <span title="Contiene archivo adjunto cifrado" class="text-[10px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono inline-flex items-center gap-1">
+                              <i data-lucide="paperclip" class="w-2.5 h-2.5"></i> Adjunto
+                            </span>
+                          ` : ''}
+                        </div>
+
+                        <h4 class="font-bold text-slate-100 text-base group-hover:text-emerald-300 transition-colors flex items-center gap-2">
+                          ${this.escapeHtml(doc.title)}
+                        </h4>
+
+                        <div class="flex items-center gap-4 text-xs text-slate-400 mt-1 flex-wrap">
+                          ${doc.doc_number ? `
+                            <span class="font-mono text-emerald-400 flex items-center gap-1">
+                              <strong>Nº:</strong> ${this.escapeHtml(doc.doc_number)}
+                            </span>
+                          ` : ''}
+                          ${doc.issuer ? `<span><strong>Emisor:</strong> ${this.escapeHtml(doc.issuer)}</span>` : ''}
+                          ${doc.expiry_date ? `<span><strong>Vence:</strong> ${doc.expiry_date}</span>` : ''}
+                        </div>
+                      </div>
+
+                      <div class="flex items-center gap-3 justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-white/5">
+                        ${statusBadge}
+                        <button type="button" class="px-3 py-1.5 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500 group-hover:text-slate-950 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap">
+                          <span>Extraer Expediente</span>
+                          <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+                        </button>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  }
+
+  /**
+   * Abre el modal de creación de documento permitiendo preseleccionar gaveta
+   */
+  openNewDocumentModal(categoryPreselect = null) {
+    const user = window.vaultAuth.currentUser;
+    if (!window.vaultAuth.canAddDocument(this.unlockedDocuments.length)) {
+      this.openUpgradeModal('Has alcanzado el límite de 5 documentos de tu Plan Gratuito. Actualiza a Pro para archivado ilimitado en todas las gavetas.');
+      return;
+    }
+
+    this.updateCategoryDropdowns(); // Asegurar catálogo actualizado de gavetas
+
+    const modal = document.getElementById('modal-new-doc');
+    const form = document.getElementById('form-new-doc');
+    if (form) form.reset();
+
+    if (categoryPreselect) {
+      const select = document.getElementById('new-doc-category-select');
+      if (select) select.value = categoryPreselect;
+    }
+
+    if (modal) modal.showModal();
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Abre el modal para crear una nueva gaveta con concepto y color personalizado
+   */
+  openNewDrawerModal() {
+    const modal = document.getElementById('modal-new-drawer');
+    const form = document.getElementById('form-new-drawer');
+    if (form) form.reset();
+
+    // Paleta de colores distintivos de alta tecnología
+    const colors = [
+      { name: 'Cyan', hex: '#06b6d4' },
+      { name: 'Esmeralda', hex: '#10b981' },
+      { name: 'Ámbar', hex: '#f59e0b' },
+      { name: 'Púrpura', hex: '#8b5cf6' },
+      { name: 'Rosa', hex: '#ec4899' },
+      { name: 'Azul Zafiro', hex: '#3b82f6' },
+      { name: 'Naranja Fuego', hex: '#f97316' },
+      { name: 'Verde Lima', hex: '#84cc16' },
+      { name: 'Rubí', hex: '#f43f5e' },
+      { name: 'Teal', hex: '#14b8a6' },
+      { name: 'Índigo Cripto', hex: '#6366f1' },
+      { name: 'Bronce Suizo', hex: '#d97706' }
+    ];
+
+    const colorPicker = document.getElementById('new-drawer-color-picker');
+    if (colorPicker) {
+      colorPicker.innerHTML = colors.map((c, i) => `
+        <button type="button" onclick="window.bovedaApp.selectDrawerColor('${c.hex}')" data-color="${c.hex}" class="drawer-color-btn p-2 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${i === 5 ? 'border-white bg-white/10 ring-2 ring-white/50' : 'border-white/10 hover:border-white/30 bg-slate-900'}">
+          <div class="w-6 h-6 rounded-full shadow-md" style="background: ${c.hex}; box-shadow: 0 0 10px ${c.hex}60;"></div>
+          <span class="text-[9px] font-medium text-slate-300 truncate w-full text-center">${c.name}</span>
+        </button>
+      `).join('');
+      document.getElementById('new-drawer-selected-color').value = colors[5].hex;
+    }
+
+    // Selección de iconos Lucide representativos
+    const icons = [
+      { id: 'graduation-cap', label: 'Educación' },
+      { id: 'briefcase', label: 'Trabajo' },
+      { id: 'scale', label: 'Legal' },
+      { id: 'file-text', label: 'General' },
+      { id: 'paw-print', label: 'Mascotas' },
+      { id: 'heart-pulse', label: 'Seguros' },
+      { id: 'building-2', label: 'Empresas' },
+      { id: 'receipt', label: 'Impuestos' },
+      { id: 'shield-alert', label: 'Pólizas' },
+      { id: 'key', label: 'Inmuebles' },
+      { id: 'plane', label: 'Viajes' },
+      { id: 'folder-archive', label: 'Archivos' }
+    ];
+
+    const iconPicker = document.getElementById('new-drawer-icon-picker');
+    if (iconPicker) {
+      iconPicker.innerHTML = icons.map((ic, i) => `
+        <button type="button" onclick="window.bovedaApp.selectDrawerIcon('${ic.id}')" data-icon="${ic.id}" class="drawer-icon-btn p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${i === 0 ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300 ring-2 ring-cyan-400/50' : 'border-white/10 hover:border-white/30 bg-slate-900 text-slate-300'}">
+          <i data-lucide="${ic.id}" class="w-5 h-5"></i>
+          <span class="text-[9px] font-medium truncate w-full text-center">${ic.label}</span>
+        </button>
+      `).join('');
+      document.getElementById('new-drawer-selected-icon').value = icons[0].id;
+    }
+
+    if (modal) modal.showModal();
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  selectDrawerColor(hex) {
+    document.getElementById('new-drawer-selected-color').value = hex;
+    document.querySelectorAll('.drawer-color-btn').forEach(btn => {
+      if (btn.dataset.color === hex) {
+        btn.className = 'drawer-color-btn p-2 rounded-xl border flex flex-col items-center gap-1.5 transition-all border-white bg-white/10 ring-2 ring-white/50';
+      } else {
+        btn.className = 'drawer-color-btn p-2 rounded-xl border flex flex-col items-center gap-1.5 transition-all border-white/10 hover:border-white/30 bg-slate-900';
+      }
+    });
+  }
+
+  selectDrawerIcon(iconId) {
+    document.getElementById('new-drawer-selected-icon').value = iconId;
+    document.querySelectorAll('.drawer-icon-btn').forEach(btn => {
+      if (btn.dataset.icon === iconId) {
+        btn.className = 'drawer-icon-btn p-2 rounded-xl border flex flex-col items-center gap-1 transition-all border-cyan-400 bg-cyan-500/20 text-cyan-300 ring-2 ring-cyan-400/50';
+      } else {
+        btn.className = 'drawer-icon-btn p-2 rounded-xl border flex flex-col items-center gap-1 transition-all border-white/10 hover:border-white/30 bg-slate-900 text-slate-300';
+      }
+    });
+  }
+
+  /**
+   * Guarda una nueva gaveta personalizada en IndexedDB y la integra en el archivador
+   */
+  async handleSaveNewDrawer(event) {
+    event.preventDefault();
+    const label = document.getElementById('new-drawer-label').value.trim();
+    const subtitle = document.getElementById('new-drawer-subtitle').value.trim();
+    const color = document.getElementById('new-drawer-selected-color').value || '#3b82f6';
+    const icon = document.getElementById('new-drawer-selected-icon').value || 'graduation-cap';
+
+    if (!label) return;
+
+    const user = window.vaultAuth.currentUser;
+    if (!user) return;
+
+    const slug = label.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20);
+    const drawerId = `gaveta_${slug}_${Math.random().toString(36).substr(2, 5)}`;
+    const drawerNumber = Object.keys(this.categories).length + 1;
+
+    const newDrawer = {
+      id: drawerId,
+      drawerNumber,
+      label,
+      subtitle,
+      icon,
+      color,
+      isCustom: true
+    };
+
+    try {
+      const savedCustom = (await window.vaultStorage.getSetting('customDrawers_' + user.sub)) || {};
+      savedCustom[drawerId] = newDrawer;
+      await window.vaultStorage.setSetting('customDrawers_' + user.sub, savedCustom);
+
+      this.categories[drawerId] = newDrawer;
+      this.openDrawers.add(drawerId); // Abrir la nueva gaveta instalada
+
+      this.updateCategoryDropdowns();
+      this.renderCabinet();
+      this.showToast(`Gaveta "${label}" instalada y protegida en el archivador.`, 'success');
+
+      document.getElementById('modal-new-drawer').close();
+      await window.vaultStorage.logAuditEvent(user.sub, 'DRAWER_CREATED', { drawerId, label, color });
+    } catch (err) {
+      console.error(err);
+      this.showToast('Error al guardar la nueva gaveta.', 'danger');
+    }
+  }
+
+  /**
+   * Desinstala una gaveta personalizada si no contiene expedientes
+   */
+  async deleteCustomDrawer(drawerKey) {
+    const cat = this.categories[drawerKey];
+    if (!cat || !cat.isCustom) return;
+
+    const docsInDrawer = this.unlockedDocuments.filter(d => d.category === drawerKey);
+    if (docsInDrawer.length > 0) {
+      this.showToast(`Esta gaveta contiene ${docsInDrawer.length} expediente(s). Muévelos a otra gaveta o elimínalos antes de desinstalarla.`, 'warning');
+      return;
+    }
+
+    if (!confirm(`¿Estás seguro de que deseas desinstalar la Gaveta ${cat.drawerNumber} (${cat.label})?`)) {
+      return;
+    }
+
+    const user = window.vaultAuth.currentUser;
+    try {
+      const savedCustom = (await window.vaultStorage.getSetting('customDrawers_' + user.sub)) || {};
+      delete savedCustom[drawerKey];
+      await window.vaultStorage.setSetting('customDrawers_' + user.sub, savedCustom);
+
+      delete this.categories[drawerKey];
+      this.openDrawers.delete(drawerKey);
+
+      // Re-numerar gavetas consecutivamente
+      let num = 1;
+      Object.values(this.categories).forEach(c => {
+        c.drawerNumber = num++;
+      });
+
+      this.updateCategoryDropdowns();
+      this.renderCabinet();
+      this.showToast(`Gaveta "${cat.label}" desinstalada del archivador.`, 'info');
+      await window.vaultStorage.logAuditEvent(user.sub, 'DRAWER_DELETED', { drawerKey });
+    } catch (err) {
+      console.error(err);
+      this.showToast('Error al desinstalar la gaveta.', 'danger');
+    }
+  }
+
+  /**
+   * Guarda un nuevo documento cifrado
+   */
+  async handleSaveNewDocument(formData) {
+    if (!window.vaultAuth.masterKey) {
+      this.showToast('La clave maestra no está activa. Desbloquea la bóveda.', 'danger');
+      return;
+    }
+
+    const title = formData.get('title');
+    const category = formData.get('category');
+    const docNumber = formData.get('doc_number');
+    const issuer = formData.get('issuer');
+    const issueDate = formData.get('issue_date');
+    const expiryDate = formData.get('expiry_date');
+    const tags = formData.get('tags');
+    const notes = formData.get('notes');
+    const fileAttachment = formData.get('attachment_file');
+
+    const docId = 'doc_' + Math.random().toString(36).substr(2, 9);
+
+    let attachmentCipher = null;
+    if (fileAttachment && fileAttachment.size > 0) {
+      attachmentCipher = await window.vaultCrypto.encryptFile(window.vaultAuth.masterKey, fileAttachment);
+    }
+
+    const payloadToEncrypt = {
+      doc_number: docNumber,
+      issuer: issuer,
+      issue_date: issueDate,
+      expiry_date: expiryDate,
+      tags: tags,
+      notes: notes,
+      attachment: attachmentCipher
+    };
+
+    // Cifrar metadatos y payload con AES-256-GCM
+    const encryptedResult = await window.vaultCrypto.encrypt(window.vaultAuth.masterKey, payloadToEncrypt);
+
+    const docRecord = {
+      id: docId,
+      user_id: window.vaultAuth.currentUser.sub,
+      category: category,
+      title: title,
+      encrypted_payload: encryptedResult.ciphertext,
+      iv: encryptedResult.iv,
+      checksum: encryptedResult.checksum,
+      expiry_date: expiryDate || null,
+      is_synced: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await window.vaultStorage.saveDocument(docRecord);
+    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_CREATED', { docId, category });
+
+    // Asegurar que la gaveta correspondiente se abra para ver el nuevo expediente
+    this.openDrawers.add(category);
+
+    this.showToast('Documento cifrado y archivado en la gaveta con éxito', 'success');
+    document.getElementById('modal-new-doc').close();
+    await this.loadAndRenderDocuments();
+  }
+
+  /**
+   * Abre el detalle de un documento descifrado con opciones de Lectura, Impresión y Modificación
+   */
+  async openDocumentDetail(docId) {
+    const doc = this.unlockedDocuments.find(d => d.id === docId);
+    if (!doc) return;
+
+    this.selectedDoc = doc;
+    this.toggleEditDocumentMode(false); // Siempre comenzar en modo lectura
+
+    // Liberar objeto URL previo si existe para prevenir fugas de memoria
+    if (this._currentObjectUrl) {
+      URL.revokeObjectURL(this._currentObjectUrl);
+      this._currentObjectUrl = null;
+    }
+
+    const modal = document.getElementById('modal-doc-detail');
+    const cat = this.categories[doc.category] || { label: doc.category, drawerNumber: 1, icon: 'file' };
+
+    // Encabezado
+    const categoryBadge = document.getElementById('detail-category-badge');
+    if (categoryBadge) {
+      categoryBadge.textContent = `GAVETA ${cat.drawerNumber} • ${cat.label.toUpperCase()}`;
+    }
+
+    // Badge de estado de vencimiento
+    const statusPill = document.getElementById('detail-status-pill');
+    if (statusPill) {
+      const now = new Date();
+      const thirtyDays = new Date(now.getTime() + 30 * 86400000);
+      if (!doc.expiry_date) {
+        statusPill.innerHTML = '<span class="badge-status badge-valid"><i data-lucide="check-circle" class="w-3 h-3"></i> Vigente</span>';
+      } else {
+        const exp = new Date(doc.expiry_date);
+        if (exp < now) {
+          statusPill.innerHTML = '<span class="badge-status badge-expired"><i data-lucide="alert-octagon" class="w-3 h-3"></i> Vencido</span>';
+        } else if (exp <= thirtyDays) {
+          const daysLeft = Math.ceil((exp - now) / 86400000);
+          statusPill.innerHTML = `<span class="badge-status badge-warning"><i data-lucide="clock" class="w-3 h-3"></i> Vence en ${daysLeft}d</span>`;
+        } else {
+          statusPill.innerHTML = '<span class="badge-status badge-valid"><i data-lucide="check-circle" class="w-3 h-3"></i> Vigente</span>';
+        }
+      }
+    }
+
+    // Renderizar la Credencial Digital Visual
+    const cardContainer = document.getElementById('detail-credential-card-container');
+    if (cardContainer) {
+      cardContainer.innerHTML = this.renderCredentialCardHTML(doc, cat);
+    }
+
+    // Modo Lectura - Textos
+    document.getElementById('detail-title').textContent = doc.title;
+    document.getElementById('detail-number').textContent = doc.doc_number || 'N/A';
+    document.getElementById('detail-issuer').textContent = doc.issuer || 'N/A';
+    document.getElementById('detail-issue-date').textContent = doc.issue_date || 'N/A';
+    document.getElementById('detail-expiry-date').textContent = doc.expiry_date || 'Sin vencimiento programado';
+    document.getElementById('detail-notes').textContent = doc.notes || 'Sin notas privadas adicionales.';
+
+    // Manejo de archivo adjunto con descifrado en memoria y visualización inline
+    const attachmentContainer = document.getElementById('detail-attachment-preview');
+    if (doc.attachment && doc.attachment.ciphertext) {
+      attachmentContainer.innerHTML = `
+        <div class="p-4 rounded-2xl bg-slate-900 border border-white/10 flex items-center justify-center gap-3 text-slate-400 text-xs mt-3">
+          <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400 animate-pulse"></i>
+          <span>Descifrando expediente original con Web Crypto API (AES-256-GCM)...</span>
+        </div>
+      `;
+      if (window.lucide) window.lucide.createIcons();
+
+      try {
+        const blob = await window.vaultCrypto.decryptFile(
+          window.vaultAuth.masterKey,
+          doc.attachment.ciphertext,
+          doc.attachment.iv,
+          doc.attachment.mimeType
+        );
+
+        this._currentObjectUrl = URL.createObjectURL(blob);
+        const mime = doc.attachment.mimeType || '';
+
+        if (mime.startsWith('image/')) {
+          attachmentContainer.innerHTML = `
+            <div class="rounded-2xl border border-emerald-500/30 bg-slate-950/80 p-3.5 shadow-2xl mt-3">
+              <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-white/10 text-xs text-slate-300">
+                <span class="flex items-center gap-1.5 font-semibold text-emerald-400">
+                  <i data-lucide="image" class="w-4 h-4"></i> Documento Digitalizado Original (${this.escapeHtml(doc.attachment.name)})
+                </span>
+                <div class="flex items-center gap-2">
+                  <a href="${this._currentObjectUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold inline-flex items-center gap-1 transition-colors text-xs">
+                    <i data-lucide="maximize-2" class="w-3 h-3"></i> Pantalla Completa
+                  </a>
+                  <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold inline-flex items-center gap-1 transition-colors text-xs shadow-md shadow-emerald-500/20">
+                    <i data-lucide="download" class="w-3 h-3"></i> Descargar
+                  </button>
+                </div>
+              </div>
+              <div class="flex justify-center p-3 bg-slate-900/60 rounded-xl overflow-hidden max-h-80 border border-white/5">
+                <img src="${this._currentObjectUrl}" alt="${this.escapeHtml(doc.title)}" class="max-h-72 w-auto object-contain rounded-lg shadow-lg hover:scale-[1.02] transition-transform cursor-pointer" onclick="window.open('${this._currentObjectUrl}', '_blank')" title="Haga clic para ver a tamaño completo" />
+              </div>
+            </div>
+          `;
+        } else if (mime === 'application/pdf') {
+          attachmentContainer.innerHTML = `
+            <div class="rounded-2xl border border-emerald-500/30 bg-slate-950/80 p-3.5 shadow-2xl mt-3">
+              <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-white/10 text-xs text-slate-300">
+                <span class="flex items-center gap-1.5 font-semibold text-emerald-400">
+                  <i data-lucide="file-text" class="w-4 h-4"></i> Documento PDF Oficial (${this.escapeHtml(doc.attachment.name)})
+                </span>
+                <div class="flex items-center gap-2">
+                  <a href="${this._currentObjectUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold inline-flex items-center gap-1 transition-colors text-xs">
+                    <i data-lucide="external-link" class="w-3 h-3"></i> Abrir en Pestaña
+                  </a>
+                  <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold inline-flex items-center gap-1 transition-colors text-xs shadow-md shadow-emerald-500/20">
+                    <i data-lucide="download" class="w-3 h-3"></i> Descargar
+                  </button>
+                </div>
+              </div>
+              <iframe src="${this._currentObjectUrl}#toolbar=0" class="w-full h-80 rounded-xl border border-white/10 bg-slate-900"></iframe>
+            </div>
+          `;
+        } else {
+          attachmentContainer.innerHTML = `
+            <div class="p-4 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-between mt-3">
+              <div class="flex items-center gap-3">
+                <div class="p-2.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                  <i data-lucide="file-check" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <p class="text-sm font-semibold text-slate-200">${this.escapeHtml(doc.attachment.name)}</p>
+                  <p class="text-xs text-slate-400">Archivo Cifrado con AES-256 • ${doc.attachment.mimeType || 'Binario'}</p>
+                </div>
+              </div>
+              <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-3.5 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 inline-flex items-center gap-1.5 shadow-md shadow-emerald-500/20">
+                <i data-lucide="download" class="w-4 h-4"></i> Descargar Original
+              </button>
+            </div>
+          `;
+        }
+      } catch (err) {
+        console.error('[BovedaApp] Error al descifrar adjunto:', err);
+        attachmentContainer.innerHTML = `
+          <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-center gap-2 mt-3">
+            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+            <span>No se pudo descifrar la vista previa del archivo adjunto.</span>
+          </div>
+        `;
+      }
+    } else {
+      attachmentContainer.innerHTML = `
+        <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 text-xs text-slate-400 flex items-center justify-between mt-3">
+          <span class="italic">Este expediente no contiene imagen ni documento adjunto.</span>
+          <button type="button" onclick="window.bovedaApp.toggleEditDocumentMode(true)" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-emerald-400 font-semibold inline-flex items-center gap-1 text-xs">
+            <i data-lucide="paperclip" class="w-3 h-3"></i> Adjuntar ahora
+          </button>
+        </div>
+      `;
+    }
+
+    // Precargar campos en Modo Edición
+    document.getElementById('edit-title').value = doc.title || '';
+    document.getElementById('edit-category').value = doc.category || 'identidad';
+    document.getElementById('edit-doc-number').value = doc.doc_number || '';
+    document.getElementById('edit-issuer').value = doc.issuer || '';
+    document.getElementById('edit-issue-date').value = doc.issue_date || '';
+    document.getElementById('edit-expiry-date').value = doc.expiry_date || '';
+    document.getElementById('edit-notes').value = doc.notes || '';
+
+    modal.showModal();
+    if (window.lucide) window.lucide.createIcons();
+    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_VIEWED', { docId });
+  }
+
+  /**
+   * Genera el HTML de la Credencial Digital Visual (Digital Document Card)
+   */
+  renderCredentialCardHTML(doc, cat) {
+    const isDefaultTheme = ['identidad', 'vehiculos', 'finanzas', 'residencia', 'salud'].includes(doc.category);
+    const themeClass = isDefaultTheme ? `theme-${doc.category}` : 'theme-custom';
+    const drawerColor = (cat && cat.color) ? cat.color : '#06b6d4';
+    const customStyle = !isDefaultTheme ? `style="background: linear-gradient(135deg, ${drawerColor}28 0%, #0d1527 50%, #030712 100%); border-color: ${drawerColor}66;"` : '';
+    const docNum = doc.doc_number || '000000000';
+    const rawCleanNum = docNum.replace(/[^A-Z0-9]/gi, '').toUpperCase() || '000000000';
+    const mrzNum = rawCleanNum.padEnd(9, '<').slice(0, 9);
+    
+    // Líneas MRZ tipo estándar OCR-B (40 caracteres por línea)
+    const mrzLine1 = `IDUTO${mrzNum}${'<'.repeat(26)}`;
+    const mrzLine2 = `8501017M3212318UTO${'<'.repeat(21)}4`;
+
+    const user = window.vaultAuth.currentUser;
+    const titularName = (user && user.email) ? user.email.split('@')[0].toUpperCase() : 'TITULAR AUTORIZADO';
+
+    return `
+      <div class="credential-card ${themeClass}" ${customStyle}>
+        <div class="hologram-strip"></div>
+        
+        <!-- Encabezado de la Credencial -->
+        <div class="flex items-center justify-between pb-3 border-b border-white/10 mb-4 relative z-10">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center text-white text-xs">
+              <i data-lucide="${cat.icon || 'shield'}" class="w-3.5 h-3.5"></i>
+            </div>
+            <div>
+              <span class="text-[9px] font-bold tracking-widest uppercase text-slate-300 block">REPÚBLICA DIGITAL • BÓVEDA SECURE WALLET</span>
+              <span class="text-xs font-bold text-white tracking-wide">${this.escapeHtml(cat.label)}</span>
+            </div>
+          </div>
+
+          <!-- Símbolo Contactless / NFC -->
+          <div class="flex items-center gap-2 text-white/70" title="Credencial Digital con Chip y NFC Seguro">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+              <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+              <line x1="12" y1="20" x2="12.01" y2="20"></line>
+            </svg>
+            <span class="text-[9px] font-mono font-bold tracking-wider uppercase hidden sm:inline">ZERO-KNOWLEDGE</span>
+          </div>
+        </div>
+
+        <!-- Cuerpo Central: Chip, Foto Biométrica y Datos Embossados -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 my-2 relative z-10">
+          <div class="flex items-center gap-3.5">
+            <!-- Chip EMV Dorado -->
+            <div class="emv-chip" title="Microprocesador criptográfico seguro"></div>
+
+            <!-- Silueta de Foto Biométrica -->
+            <div class="w-12 h-14 rounded-lg bg-slate-900/90 border border-white/20 flex flex-col items-center justify-center text-slate-400 shadow-inner relative overflow-hidden" title="Identificación Biométrica">
+              <i data-lucide="user" class="w-6 h-6 text-slate-300"></i>
+              <span class="text-[7px] font-mono tracking-tighter text-emerald-400 mt-1 uppercase">VERIFICADO</span>
+            </div>
+
+            <!-- Título y Titular -->
+            <div>
+              <p class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Documento Oficial</p>
+              <h4 class="font-extrabold text-white text-base sm:text-lg leading-tight">${this.escapeHtml(doc.title)}</h4>
+              <p class="text-xs text-slate-300 mt-0.5 font-medium">${this.escapeHtml(doc.issuer || 'Autoridad Emisora Oficial')}</p>
+            </div>
+          </div>
+
+          <!-- Número de Documento en Relieve (Embossed OCR) -->
+          <div class="sm:text-right">
+            <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">Nº DE EXPEDIENTE</span>
+            <span class="font-mono font-black text-lg sm:text-xl text-emerald-300 tracking-wider drop-shadow-md">
+              ${this.escapeHtml(doc.doc_number || 'N/A')}
+            </span>
+          </div>
+        </div>
+
+        <!-- Fila de Fechas y Titular -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-3 mt-3 border-t border-white/10 text-xs text-slate-300 relative z-10">
+          <div>
+            <span class="text-[9px] uppercase font-semibold text-slate-400 block">Titular:</span>
+            <span class="font-semibold text-white tracking-wide text-xs truncate block">${titularName}</span>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-semibold text-slate-400 block">Emisión:</span>
+            <span class="font-mono text-slate-200 text-xs">${doc.issue_date || 'N/A'}</span>
+          </div>
+          <div class="col-span-2 sm:col-span-1">
+            <span class="text-[9px] uppercase font-semibold text-slate-400 block">Vencimiento:</span>
+            <span class="font-mono text-emerald-300 font-bold text-xs">${doc.expiry_date || 'INDEFINIDO'}</span>
+          </div>
+        </div>
+
+        <!-- Franja OCR / MRZ en la Base de la Credencial -->
+        <div class="mt-4 relative z-10">
+          <div class="mrz-strip">
+            <div>${mrzLine1}</div>
+            <div>${mrzLine2}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Si la bóveda está vacía, pre-siembra 3 documentos de muestra con adjuntos vectoriales digitalizados
+   */
+  async _seedInitialDemoDocuments(userId) {
+    try {
+      const demoItems = [
+        {
+          id: 'doc_demo_pasaporte',
+          category: 'identidad',
+          title: 'Pasaporte Biométrico Oficial',
+          doc_number: 'PAS-84920184',
+          issuer: 'Dirección General de Migración',
+          issue_date: '2022-04-10',
+          expiry_date: '2032-04-10',
+          tags: 'pasaporte, viaje, identidad',
+          notes: 'Pasaporte con microchip criptográfico biométrico y lectura RFID.',
+          fileName: 'pasaporte_biometrico_scan.svg',
+          svg: `<svg width="600" height="380" viewBox="0 0 600 380" xmlns="http://www.w3.org/2000/svg">
+            <rect width="600" height="380" rx="16" fill="#0f172a" />
+            <rect x="10" y="10" width="580" height="360" rx="12" fill="#0a192f" stroke="#00b4d8" stroke-width="2" />
+            <circle cx="500" cy="80" r="45" fill="none" stroke="#00b4d8" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.6"/>
+            <text x="35" y="45" fill="#f8fafc" font-family="Arial, sans-serif" font-size="14" font-weight="bold" letter-spacing="2">REPÚBLICA DIGITAL • PASAPORTE BIOMÉTRICO</text>
+            <text x="35" y="65" fill="#94a3b8" font-family="Arial, sans-serif" font-size="10">PASSPORT / PASSEPORT • TIPO P • CÓDIGO UTO</text>
+            <rect x="35" y="90" width="110" height="140" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
+            <circle cx="90" cy="140" r="26" fill="#64748b"/>
+            <path d="M55 210 Q90 175 125 210 Z" fill="#64748b"/>
+            <text x="90" y="222" fill="#38bdf8" font-family="monospace" font-size="8" text-anchor="middle">BIOMETRIC CHIP</text>
+            <text x="165" y="105" fill="#94a3b8" font-family="sans-serif" font-size="9">APELLIDOS / SURNAME</text>
+            <text x="165" y="122" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="bold">AGUIAR MÁRMOL</text>
+            <text x="165" y="145" fill="#94a3b8" font-family="sans-serif" font-size="9">NOMBRES / GIVEN NAMES</text>
+            <text x="165" y="162" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="bold">ANDRÉS ELOY</text>
+            <text x="165" y="185" fill="#94a3b8" font-family="sans-serif" font-size="9">NACIONALIDAD</text>
+            <text x="165" y="200" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">UTOPIAN</text>
+            <text x="340" y="185" fill="#94a3b8" font-family="sans-serif" font-size="9">FECHA NACIMIENTO</text>
+            <text x="340" y="200" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">17 OCT 1995</text>
+            <text x="165" y="222" fill="#94a3b8" font-family="sans-serif" font-size="9">Nº PASAPORTE</text>
+            <text x="165" y="238" fill="#38bdf8" font-family="monospace" font-size="13" font-weight="bold">PAS-84920184</text>
+            <text x="340" y="222" fill="#94a3b8" font-family="sans-serif" font-size="9">VENCIMIENTO</text>
+            <text x="340" y="238" fill="#10b981" font-family="monospace" font-size="13" font-weight="bold">10 ABR 2032</text>
+            <circle cx="500" cy="180" r="32" fill="#d97706" opacity="0.3"/>
+            <circle cx="500" cy="180" r="28" fill="none" stroke="#f59e0b" stroke-width="2"/>
+            <text x="500" y="184" fill="#fbbf24" font-family="sans-serif" font-size="8" font-weight="bold" text-anchor="middle">OFFICIAL SEAL</text>
+            <rect x="25" y="270" width="550" height="85" rx="6" fill="#030712" stroke="#1e293b" stroke-width="1"/>
+            <text x="40" y="305" fill="#cbd5e1" font-family="Courier, monospace" font-size="13" letter-spacing="3">P&lt;UTOPAS84920184&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;</text>
+            <text x="40" y="335" fill="#cbd5e1" font-family="Courier, monospace" font-size="13" letter-spacing="3">9510178M3204104UTO&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;8</text>
+          </svg>`
+        },
+        {
+          id: 'doc_demo_licencia',
+          category: 'vehiculos',
+          title: 'Licencia Nacional de Conducir',
+          doc_number: 'LIC-7749210-B',
+          issuer: 'Instituto Nacional de Transporte',
+          issue_date: '2023-08-15',
+          expiry_date: new Date(Date.now() + 45 * 86400000).toISOString().split('T')[0],
+          tags: 'licencia, vehiculo, transito',
+          notes: 'Categoría B (Automóviles particulares) y Categoría A (Motocicletas).',
+          fileName: 'licencia_conducir_scan.svg',
+          svg: `<svg width="600" height="380" viewBox="0 0 600 380" xmlns="http://www.w3.org/2000/svg">
+            <rect width="600" height="380" rx="16" fill="#042f2e" />
+            <rect x="10" y="10" width="580" height="360" rx="12" fill="#064e3b" stroke="#10b981" stroke-width="2" />
+            <text x="35" y="45" fill="#ecfdf5" font-family="Arial, sans-serif" font-size="14" font-weight="bold" letter-spacing="1">LICENCIA NACIONAL DE CONDUCIR</text>
+            <text x="35" y="65" fill="#a7f3d0" font-family="Arial, sans-serif" font-size="10">INSTITUTO NACIONAL DE TRANSPORTE TERRESTRE</text>
+            <rect x="35" y="90" width="110" height="140" rx="8" fill="#022c22" stroke="#10b981" stroke-width="2"/>
+            <circle cx="90" cy="140" r="26" fill="#059669"/>
+            <path d="M55 210 Q90 175 125 210 Z" fill="#059669"/>
+            <text x="90" y="222" fill="#6ee7b7" font-family="monospace" font-size="8" text-anchor="middle">CLASE B</text>
+            <text x="165" y="105" fill="#a7f3d0" font-family="sans-serif" font-size="9">TITULAR CONDUCTOR</text>
+            <text x="165" y="122" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="bold">ANDRÉS ELOY AGUIAR</text>
+            <text x="165" y="150" fill="#a7f3d0" font-family="sans-serif" font-size="9">Nº LICENCIA</text>
+            <text x="165" y="168" fill="#34d399" font-family="monospace" font-size="14" font-weight="bold">LIC-7749210-B</text>
+            <text x="340" y="150" fill="#a7f3d0" font-family="sans-serif" font-size="9">GRUPO SANGUÍNEO</text>
+            <text x="340" y="168" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="bold">O POSITIVO (O+)</text>
+            <text x="165" y="195" fill="#a7f3d0" font-family="sans-serif" font-size="9">CATEGORÍAS AUTORIZADAS</text>
+            <rect x="165" y="202" width="40" height="24" rx="4" fill="#047857" stroke="#34d399"/>
+            <text x="185" y="218" fill="#ffffff" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">A</text>
+            <rect x="215" y="202" width="40" height="24" rx="4" fill="#10b981"/>
+            <text x="235" y="218" fill="#022c22" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">B</text>
+            <text x="340" y="195" fill="#a7f3d0" font-family="sans-serif" font-size="9">VENCIMIENTO</text>
+            <text x="340" y="218" fill="#fbbf24" font-family="monospace" font-size="13" font-weight="bold">PROXIMO A VENCER</text>
+            <rect x="35" y="270" width="530" height="60" rx="6" fill="#022c22"/>
+            <text x="200" y="305" fill="#a7f3d0" font-family="monospace" font-size="12" letter-spacing="4">*LIC-7749210-B*</text>
+          </svg>`
+        },
+        {
+          id: 'doc_demo_tarjeta',
+          category: 'finanzas',
+          title: 'Tarjeta Visa Signature Bóveda',
+          doc_number: '4532 •••• •••• 9924',
+          issuer: 'Banco Internacional de Pagos',
+          issue_date: '2024-01-01',
+          expiry_date: '2029-12-31',
+          tags: 'tarjeta, visa, finanzas',
+          notes: 'Tarjeta metálica privada con tokenización Zero-Knowledge.',
+          fileName: 'tarjeta_visa_titanium.svg',
+          svg: `<svg width="600" height="380" viewBox="0 0 600 380" xmlns="http://www.w3.org/2000/svg">
+            <rect width="600" height="380" rx="20" fill="#18181b" />
+            <rect x="8" y="8" width="584" height="364" rx="16" fill="#09090b" stroke="#71717a" stroke-width="1.5" />
+            <text x="40" y="55" fill="#e4e4e7" font-family="Arial, sans-serif" font-size="18" font-weight="900" letter-spacing="2">BÓVEDA DIGITAL</text>
+            <text x="40" y="75" fill="#a1a1aa" font-family="Arial, sans-serif" font-size="10" letter-spacing="1">PRIVATE TITANIUM METAL</text>
+            <path d="M490 55 A 12 12 0 0 1 490 75 M496 50 A 18 18 0 0 1 496 80 M502 45 A 24 24 0 0 1 502 85" fill="none" stroke="#71717a" stroke-width="2" stroke-linecap="round"/>
+            <rect x="40" y="115" width="60" height="46" rx="8" fill="#d97706" stroke="#b45309" stroke-width="1.5"/>
+            <rect x="44" y="119" width="52" height="38" rx="5" fill="#fbbf24"/>
+            <line x1="44" y1="138" x2="96" y2="138" stroke="#78350f" stroke-width="1"/>
+            <line x1="68" y1="119" x2="68" y2="157" stroke="#78350f" stroke-width="1"/>
+            <text x="40" y="215" fill="#f4f4f5" font-family="Courier, monospace" font-size="22" font-weight="bold" letter-spacing="4">4532  8901  2345  9924</text>
+            <text x="40" y="260" fill="#71717a" font-family="sans-serif" font-size="9">VALID THRU</text>
+            <text x="40" y="278" fill="#f4f4f5" font-family="monospace" font-size="14" font-weight="bold">12/29</text>
+            <text x="40" y="315" fill="#e4e4e7" font-family="sans-serif" font-size="14" font-weight="bold" letter-spacing="2">ANDRÉS E. AGUIAR</text>
+            <text x="460" y="318" fill="#fbbf24" font-family="Arial, sans-serif" font-size="24" font-style="italic" font-weight="900" letter-spacing="1">VISA</text>
+            <text x="460" y="335" fill="#e4e4e7" font-family="sans-serif" font-size="9" letter-spacing="1">SIGNATURE</text>
+          </svg>`
+        }
+      ];
+
+      for (const item of demoItems) {
+        const svgBlob = new Blob([item.svg], { type: 'image/svg+xml' });
+        svgBlob.name = item.fileName;
+
+        const attachmentCipher = await window.vaultCrypto.encryptFile(window.vaultAuth.masterKey, svgBlob);
+
+        const payloadToEncrypt = {
+          doc_number: item.doc_number,
+          issuer: item.issuer,
+          issue_date: item.issue_date,
+          expiry_date: item.expiry_date,
+          tags: item.tags,
+          notes: item.notes,
+          attachment: attachmentCipher
+        };
+
+        const encrypted = await window.vaultCrypto.encrypt(window.vaultAuth.masterKey, payloadToEncrypt);
+
+        const record = {
+          id: item.id,
+          user_id: userId,
+          category: item.category,
+          title: item.title,
+          encrypted_payload: encrypted.ciphertext,
+          iv: encrypted.iv,
+          checksum: encrypted.checksum,
+          expiry_date: item.expiry_date,
+          is_synced: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        await window.vaultStorage.saveDocument(record);
+      }
+    } catch (err) {
+      console.warn('[BovedaApp] Error al sembrar documentos demo:', err);
+    }
+  }
+
+  /**
+   * Conmuta entre el Modo Lectura y el Modo Modificación del documento activo
+   */
+  toggleEditDocumentMode(forceState = null) {
+    if (forceState !== null) {
+      this.isEditingCurrentDoc = forceState;
+    } else {
+      this.isEditingCurrentDoc = !this.isEditingCurrentDoc;
+    }
+
+    const readView = document.getElementById('doc-read-view');
+    const editView = document.getElementById('doc-edit-view');
+    const btnText = document.getElementById('btn-toggle-edit-text');
+    const btn = document.getElementById('btn-toggle-edit');
+
+    if (this.isEditingCurrentDoc) {
+      if (readView) readView.classList.add('hidden');
+      if (editView) editView.classList.remove('hidden');
+      if (btnText) btnText.textContent = 'Ver Lectura';
+      if (btn) btn.className = 'p-2.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors';
+    } else {
+      if (readView) readView.classList.remove('hidden');
+      if (editView) editView.classList.add('hidden');
+      if (btnText) btnText.textContent = 'Modificar';
+      if (btn) btn.className = 'p-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors';
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Guarda los cambios modificados del documento y los re-cifra inmediatamente con AES-256
+   */
+  async handleSaveModifiedDocument(event) {
+    event.preventDefault();
+    if (!this.selectedDoc) return;
+
+    if (!window.vaultAuth.masterKey) {
+      this.showToast('Clave maestra bloqueada. Ingrese su PIN.', 'danger');
+      return;
+    }
+
+    const updatedTitle = document.getElementById('edit-title').value.trim();
+    const updatedCategory = document.getElementById('edit-category').value;
+    const updatedDocNumber = document.getElementById('edit-doc-number').value.trim();
+    const updatedIssuer = document.getElementById('edit-issuer').value.trim();
+    const updatedIssueDate = document.getElementById('edit-issue-date').value;
+    const updatedExpiryDate = document.getElementById('edit-expiry-date').value;
+    const updatedNotes = document.getElementById('edit-notes').value.trim();
+    const attachmentFileInput = document.getElementById('edit-attachment-file');
+
+    let attachmentCipher = this.selectedDoc.attachment || null;
+    if (attachmentFileInput && attachmentFileInput.files && attachmentFileInput.files[0]) {
+      const newFile = attachmentFileInput.files[0];
+      attachmentCipher = await window.vaultCrypto.encryptFile(window.vaultAuth.masterKey, newFile);
+    }
+
+    const updatedPayload = {
+      doc_number: updatedDocNumber,
+      issuer: updatedIssuer,
+      issue_date: updatedIssueDate,
+      expiry_date: updatedExpiryDate,
+      tags: this.selectedDoc.tags || '',
+      notes: updatedNotes,
+      attachment: attachmentCipher
+    };
+
+    // Re-cifrar con AES-256-GCM
+    const encryptedResult = await window.vaultCrypto.encrypt(window.vaultAuth.masterKey, updatedPayload);
+
+    const updatedRecord = {
+      id: this.selectedDoc.id,
+      user_id: window.vaultAuth.currentUser.sub,
+      category: updatedCategory,
+      title: updatedTitle,
+      encrypted_payload: encryptedResult.ciphertext,
+      iv: encryptedResult.iv,
+      checksum: encryptedResult.checksum,
+      expiry_date: updatedExpiryDate || null,
+      is_synced: false,
+      created_at: this.selectedDoc.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await window.vaultStorage.saveDocument(updatedRecord);
+    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_MODIFIED', { docId: updatedRecord.id });
+
+    this.showToast('Documento modificado y re-cifrado con éxito.', 'success');
+    
+    // Recargar datos y refrescar la vista de detalle
+    await this.loadAndRenderDocuments();
+    await this.openDocumentDetail(this.selectedDoc.id);
+  }
+
+  /**
+   * Imprime la ficha oficial y legible del documento activo
+   */
+  printSelectedDocument() {
+    if (!this.selectedDoc) return;
+    this.toggleEditDocumentMode(false); // Asegurar vista de lectura limpia
+    this.showToast('Preparando expediente para impresión...', 'info');
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  }
+
+  /**
+   * Descarga un archivo adjunto descifrándolo en tiempo real
+   */
+  async downloadDecryptedAttachment(docId) {
+    const doc = this.unlockedDocuments.find(d => d.id === docId);
+    if (!doc || !doc.attachment) return;
+
+    try {
+      const blob = await window.vaultCrypto.decryptFile(
+        window.vaultAuth.masterKey,
+        doc.attachment.ciphertext,
+        doc.attachment.iv,
+        doc.attachment.mimeType
+      );
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.attachment.name || 'expediente_descifrado';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.showToast('Archivo descifrado y descargado.', 'success');
+    } catch (e) {
+      console.error(e);
+      this.showToast('Error al descifrar el archivo adjunto.', 'danger');
+    }
+  }
+
+  /**
+   * Elimina un documento permanentemente con confirmación de seguridad
+   */
+  async handleDeleteSelectedDocument() {
+    if (!this.selectedDoc) return;
+    if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente el documento "${this.selectedDoc.title}" de tu bóveda? Esta acción no se puede deshacer.`)) return;
+
+    await window.vaultStorage.deleteDocument(this.selectedDoc.id);
+    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_DELETED', { docId: this.selectedDoc.id });
+    
+    document.getElementById('modal-doc-detail').close();
+    this.showToast('Documento eliminado de la gaveta.', 'success');
+    await this.loadAndRenderDocuments();
+  }
+
+  /**
+   * Abre modal de compartir seguro
+   */
+  openShareModal() {
+    if (!this.selectedDoc) return;
+    const modal = document.getElementById('modal-share-doc');
+    const linkInput = document.getElementById('share-generated-link');
+    const token = Math.random().toString(36).substr(2, 12);
+    linkInput.value = `${window.location.origin}/#share=${token}`;
+    modal.showModal();
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Abre modal de suscripción a Pro
+   */
+  openUpgradeModal(message = '') {
+    const modal = document.getElementById('modal-upgrade');
+    const noticeEl = document.getElementById('upgrade-notice-text');
+    if (noticeEl) noticeEl.textContent = message;
+    if (modal) modal.showModal();
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Simula pago exitoso y activa Plan Pro
+   */
+  async processSimulatedProCheckout() {
+    const btn = document.getElementById('btn-confirm-upgrade');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Procesando con Stripe / IAP...';
+    }
+
+    await new Promise(r => setTimeout(r, 1200));
+    await window.vaultAuth.upgradeToPro();
+
+    this.showToast('¡Felicidades! Tu cuenta ahora tiene Plan PRO Ilimitado.', 'success');
+    document.getElementById('modal-upgrade').close();
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = 'Activar Plan PRO ($4.99/mes)';
+    }
+
+    this.renderDashboardHeader();
+    this.renderMetrics();
+    await this.loadAndRenderDocuments();
+  }
+
+  /**
+   * Teclado PIN en pantalla
+   */
+  handlePinKey(num) {
+    if (this.currentPinInput.length < 6) {
+      this.currentPinInput += num;
+      this.updatePinDots();
+      if (this.currentPinInput.length === 6) {
+        setTimeout(() => this.submitPinUnlock(), 150);
+      }
+    }
+  }
+
+  handlePinBackspace() {
+    this.currentPinInput = this.currentPinInput.slice(0, -1);
+    this.updatePinDots();
+  }
+
+  updatePinDots() {
+    for (let i = 1; i <= 6; i++) {
+      const dot = document.getElementById(`pin-dot-${i}`);
+      if (dot) {
+        if (i <= this.currentPinInput.length) {
+          dot.classList.add('filled');
+        } else {
+          dot.classList.remove('filled');
+        }
+      }
+    }
+  }
+
+  async submitPinUnlock() {
+    try {
+      await window.vaultAuth.unlockWithPin(this.currentPinInput);
+      this.showToast('Bóveda descifrada correctamente', 'success');
+      this.switchView('dashboard');
+    } catch (e) {
+      this.showToast(e.message, 'danger');
+      this.currentPinInput = '';
+      this.updatePinDots();
+      const pad = document.getElementById('pin-pad-container');
+      if (pad) {
+        pad.classList.add('animate-shake');
+        setTimeout(() => pad.classList.remove('animate-shake'), 400);
+      }
+    }
+  }
+
+  /**
+   * Bloqueo rápido de la bóveda
+   */
+  lockVaultNow() {
+    window.vaultAuth.lockVault();
+    this.unlockedDocuments = [];
+    this.showToast('Bóveda bloqueada de forma segura', 'warning');
+    this.switchView('pin-lock');
+  }
+
+  /**
+   * Resetea el PIN maestro y redirige al flujo de configuración de nuevo PIN
+   */
+  async resetPin() {
+    await window.vaultAuth.resetPin();
+    this.currentPinInput = '';
+    this.updatePinDots();
+    const pin1 = document.getElementById('input-new-pin');
+    const pin2 = document.getElementById('input-confirm-pin');
+    if (pin1) pin1.value = '';
+    if (pin2) pin2.value = '';
+    this.showToast('PIN restablecido. Ingresa tu nuevo PIN.', 'info');
+    this.switchView('pin-setup');
+  }
+
+  /**
+   * Simulación del escáner de cámara inteligente
+   */
+  startCameraScanner() {
+    const scannerOverlay = document.getElementById('camera-scanner-view');
+    if (!scannerOverlay) return;
+
+    scannerOverlay.classList.remove('hidden');
+    const statusText = document.getElementById('scanner-status-text');
+    if (statusText) statusText.textContent = 'Enfoca el documento dentro del marco...';
+
+    // Simular detección de bordes y lectura OCR inteligente tras 1.2 segundos
+    setTimeout(() => {
+      if (statusText) statusText.textContent = 'Documento detectado. Ajustando bordes...';
+    }, 1200);
+
+    setTimeout(() => {
+      if (statusText) statusText.textContent = '¡Lectura completada con éxito!';
+      
+      // Auto-completar campos de ejemplo leídos por OCR
+      const docNumInput = document.getElementById('input-doc-number');
+      const issuerInput = document.getElementById('input-issuer');
+      const expiryInput = document.getElementById('input-expiry-date');
+
+      if (docNumInput) docNumInput.value = 'PAS-' + Math.floor(10000000 + Math.random() * 90000000);
+      if (issuerInput) issuerInput.value = 'Registro Civil / Cancillería';
+      
+      const futureDate = new Date();
+      futureDate.setFullYear(futureDate.getFullYear() + 5);
+      if (expiryInput) expiryInput.value = futureDate.toISOString().split('T')[0];
+
+      this.showToast('Campos estructurados leídos automáticamente con escáner.', 'success');
+      scannerOverlay.classList.add('hidden');
+    }, 2800);
+  }
+
+  stopCameraScanner() {
+    const scannerOverlay = document.getElementById('camera-scanner-view');
+    if (scannerOverlay) scannerOverlay.classList.add('hidden');
+  }
+
+  /**
+   * Notificaciones flotantes tipo Toast
+   */
+  showToast(message, type = 'info') {
+    const toast = document.getElementById('app-toast');
+    if (!toast) return;
+
+    const bgMap = {
+      success: 'bg-emerald-950/90 text-emerald-200 border-emerald-500/40',
+      danger: 'bg-rose-950/90 text-rose-200 border-rose-500/40',
+      warning: 'bg-amber-950/90 text-amber-200 border-amber-500/40',
+      info: 'bg-slate-900/90 text-slate-200 border-white/20'
+    };
+
+    toast.className = `fixed bottom-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-md shadow-2xl transition-all duration-300 font-sans text-sm ${bgMap[type] || bgMap.info}`;
+    toast.innerHTML = `
+      <div class="w-2 h-2 rounded-full ${type === 'success' ? 'bg-emerald-400' : type === 'danger' ? 'bg-rose-400' : 'bg-amber-400'} animate-pulse"></div>
+      <span>${this.escapeHtml(message)}</span>
+    `;
+
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(12px)';
+    }, 3200);
+  }
+
+  copyToClipboard(text) {
+    if (!text || text === 'N/A') return;
+    navigator.clipboard.writeText(text).then(() => {
+      this.showToast(`Copiado al portapapeles: ${text}`, 'success');
+    }).catch(() => {
+      this.showToast('No se pudo copiar.', 'warning');
+    });
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>'"]/g, 
+      tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+    );
+  }
+
+  bindEvents() {
+    // Formulario de Login
+    const loginForm = document.getElementById('form-login');
+    if (loginForm) {
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value;
+        const pass = document.getElementById('login-password').value;
+        const res = await window.vaultAuth.login(email, pass);
+        if (res.success) {
+          if (res.requiresPinSetup) {
+            this.switchView('pin-setup');
+          } else {
+            this.switchView('pin-lock');
+          }
+        } else {
+          this.showToast(res.error || 'Error al iniciar sesión', 'danger');
+        }
+      });
+    }
+
+    // Formulario de Configuración de PIN inicial
+    const pinSetupForm = document.getElementById('form-pin-setup');
+    if (pinSetupForm) {
+      pinSetupForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pin = document.getElementById('input-new-pin').value;
+        const pinConfirm = document.getElementById('input-confirm-pin').value;
+        if (pin !== pinConfirm) {
+          this.showToast('Los PINs ingresados no coinciden.', 'danger');
+          return;
+        }
+        try {
+          await window.vaultAuth.setupPin(pin);
+          this.showToast('PIN maestro configurado y bóveda descifrada.', 'success');
+          this.switchView('dashboard');
+        } catch (err) {
+          this.showToast(err.message, 'danger');
+        }
+      });
+    }
+
+    // Buscador en tiempo real de gavetas
+    const searchInput = document.getElementById('dashboard-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        this.searchQuery = e.target.value;
+        this.renderCabinet();
+      });
+    }
+
+    // Formulario de Guardado de Documento
+    const newDocForm = document.getElementById('form-new-doc');
+    if (newDocForm) {
+      newDocForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(newDocForm);
+        await this.handleSaveNewDocument(formData);
+      });
+    }
+
+    // Modal de Detalle de Expediente: Limpieza de Object URLs descifrados
+    const modalDetail = document.getElementById('modal-doc-detail');
+    if (modalDetail) {
+      modalDetail.addEventListener('close', () => {
+        if (this._currentObjectUrl) {
+          URL.revokeObjectURL(this._currentObjectUrl);
+          this._currentObjectUrl = null;
+        }
+      });
+    }
+  }
+}
+
+// Inicializar al cargar el DOM
+window.addEventListener('DOMContentLoaded', () => {
+  window.bovedaApp = new BovedaApp();
+  window.bovedaApp.init();
+});

@@ -1,0 +1,8 @@
+# Constitución de Bóveda Digital (Wallet de Documentos)
+
+1. **Arquitectura Zero-Knowledge y Criptografía Nativa:** Las claves maestras se derivan en el dispositivo cliente mediante PBKDF2 (100,000 iteraciones, SHA-256) a partir del PIN maestro del usuario. Los documentos se cifran con AES-256-GCM antes de persistirse o transmitirse; el servidor nunca conoce las claves maestras ni almacena texto en claro.
+2. **Acceso y Operación 100% Offline:** Todo el almacenamiento de documentos, adjuntos y metadatos se gestiona localmente mediante `IndexedDB` (`BovedaDigitalDB`), garantizando la consulta y creación sin conexión a internet.
+3. **Compatibilidad Unificada con Backend Existente:** El sistema de autenticación de usuarios es 100% compatible con el backend de Halterofilia (API REST, tokens JWT / OAuth2, refresh tokens rotativos y sesiones gestionadas en servidor).
+4. **Validación Centralizada de Licencias:** Las reglas de negocio, cuotas de documentos (Free: máx 5, Pro: ilimitado) y sincronización se validan y auditan en el backend mediante claims JWT verificables y webhooks de pasarelas de pago (Stripe, Apple IAP, Google Play).
+5. **Simplicidad del Stack y Cero Compilación:** JavaScript Vanilla modular, HTML5 accesible, Tailwind CSS vía CDN y estilos personalizados en `assets/css/vault.css`; ejecutable abriendo directamente `index.html` con doble clic (`file://`) o mediante cualquier servidor estático ligero.
+6. **Diseño de Bóveda Suiza y Ciberseguridad:** Estética oscura de alta tecnología, micro-interacciones táctiles, escáner de cámara con lectura de campos estructurados y experiencia móvil-first de primer nivel.

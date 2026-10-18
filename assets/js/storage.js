@@ -177,6 +177,59 @@ class VaultStorage {
   }
 
   /**
+  /**
+   * Genera el objeto de respaldo completo con documentos cifrados y gavetas personalizadas
+   * @param {string} userId 
+   * @returns {Promise<object>}
+   */
+  async exportBackupData(userId) {
+    const docs = await this.getAllDocuments(userId);
+    const customDrawers = await this.getSetting(`customDrawers_${userId}`) || {};
+    return serializarBackupBoveda(docs, customDrawers, userId);
+  }
+
+  /**
+   * Importa y fusiona los datos de un archivo de respaldo en IndexedDB
+   * @param {object} backupData 
+   * @param {string} userId 
+   */
+  async importBackupData(backupData, userId) {
+    const validacion = validarBackupBoveda(backupData);
+    if (!validacion.valido) {
+      throw new Error(validacion.error || 'Archivo de respaldo inválido o corrupto');
+    }
+
+    const currentDocs = await this.getAllDocuments(userId);
+    const mergedDocs = fusionarDocumentosBackup(currentDocs, backupData.documents);
+
+    // Guardar documentos fusionados
+    for (const doc of mergedDocs) {
+      // Asociar al usuario actual si fue generado con otro ID
+      doc.user_id = userId;
+      await this.saveDocument(doc);
+    }
+
+    // Fusionar gavetas personalizadas si vienen en el respaldo
+    if (backupData.customDrawers && typeof backupData.customDrawers === 'object') {
+      const currentDrawers = await this.getSetting(`customDrawers_${userId}`) || {};
+      const mergedDrawers = { ...currentDrawers, ...backupData.customDrawers };
+      await this.saveSetting(`customDrawers_${userId}`, mergedDrawers);
+    }
+
+    await this.logAuditEvent(userId, 'VAULT_RESTORED', {
+      restoredDocs: backupData.documents.length,
+      totalMerged: mergedDocs.length
+    });
+
+    return {
+      success: true,
+      restoredCount: backupData.documents.length,
+      totalDocs: mergedDocs.length,
+      customDrawersCount: Object.keys(backupData.customDrawers || {}).length
+    };
+  }
+
+  /**
    * Limpia toda la base de datos local (Cierre de sesión total / Borrado de bóveda)
    */
   async clearAll() {
@@ -192,5 +245,82 @@ class VaultStorage {
   }
 }
 
-// Instancia global
-window.vaultStorage = new VaultStorage();
+// =============================================================================
+// FUNCIONES PURAS DE RESPALDO Y RECUPERACIÓN (Para Browser y Tests en Node.js)
+// =============================================================================
+
+function serializarBackupBoveda(documentos = [], customDrawers = {}, userId = 'anonymous', fechaISO = new Date().toISOString()) {
+  return {
+    app: 'BovedaDigital',
+    version: '1.0',
+    exported_at: fechaISO,
+    user_id: userId,
+    customDrawers: customDrawers || {},
+    documents: (documentos || []).map(doc => ({
+      id: doc.id,
+      user_id: doc.user_id || userId,
+      category: doc.category,
+      title: doc.title,
+      encrypted_payload: doc.encrypted_payload,
+      iv: doc.iv,
+      checksum: doc.checksum,
+      expiry_date: doc.expiry_date || null,
+      created_at: doc.created_at || fechaISO,
+      updated_at: doc.updated_at || fechaISO
+    })),
+    total_documents: (documentos || []).length
+  };
+}
+
+function validarBackupBoveda(data) {
+  if (!data || typeof data !== 'object') {
+    return { valido: false, error: 'El archivo de respaldo no es un objeto JSON válido' };
+  }
+  if (data.app !== 'BovedaDigital') {
+    return { valido: false, error: 'El archivo no pertenece a Bóveda Digital (firma inválida)' };
+  }
+  if (!Array.isArray(data.documents)) {
+    return { valido: false, error: 'Estructura inválida: no contiene una lista de documentos' };
+  }
+  for (let i = 0; i < data.documents.length; i++) {
+    const doc = data.documents[i];
+    if (!doc.id || !doc.category || !doc.encrypted_payload || !doc.iv || !doc.checksum) {
+      return { valido: false, error: `Documento en posición ${i} corrupto o incompleto` };
+    }
+  }
+  return { valido: true };
+}
+
+function fusionarDocumentosBackup(docsActuales = [], docsBackup = []) {
+  const mapa = new Map();
+  for (const doc of docsActuales) {
+    if (doc && doc.id) {
+      mapa.set(doc.id, { ...doc });
+    }
+  }
+  for (const doc of docsBackup) {
+    if (doc && doc.id) {
+      mapa.set(doc.id, { ...doc });
+    }
+  }
+  return Array.from(mapa.values());
+}
+
+// Instancia global en navegador
+if (typeof window !== 'undefined') {
+  window.vaultStorage = new VaultStorage();
+  window.serializarBackupBoveda = serializarBackupBoveda;
+  window.validarBackupBoveda = validarBackupBoveda;
+  window.fusionarDocumentosBackup = fusionarDocumentosBackup;
+}
+
+// Exportación para pruebas unitarias en Node.js
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    VaultStorage,
+    serializarBackupBoveda,
+    validarBackupBoveda,
+    fusionarDocumentosBackup
+  };
+}
+

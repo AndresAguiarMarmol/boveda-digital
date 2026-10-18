@@ -311,6 +311,78 @@ class BovedaApp {
   }
 
   /**
+   * Exporta y descarga un archivo de respaldo seguro en formato JSON (Zero-Knowledge)
+   */
+  async handleExportBackup() {
+    try {
+      const user = window.vaultAuth.currentUser;
+      const userId = user ? user.sub || user.email : 'local_user';
+      const backupData = await window.vaultStorage.exportBackupData(userId);
+      
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const today = new Date().toISOString().split('T')[0];
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `boveda-backup-${today}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      this.showToast(`Respaldo generado exitosamente (${backupData.total_documents} expedientes).`, 'success');
+    } catch (err) {
+      console.error('[BovedaApp] Error al exportar respaldo:', err);
+      this.showToast('Error al generar respaldo: ' + err.message, 'danger');
+    }
+  }
+
+  /**
+   * Importa y fusiona los expedientes y gavetas desde un archivo de respaldo JSON
+   */
+  async handleImportBackup(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      let backupData;
+      try {
+        backupData = JSON.parse(text);
+      } catch (parseErr) {
+        this.showToast('El archivo seleccionado no es un JSON válido.', 'danger');
+        return;
+      }
+
+      const validacion = window.validarBackupBoveda(backupData);
+      if (!validacion.valido) {
+        this.showToast('Respaldo rechazado: ' + validacion.error, 'danger');
+        return;
+      }
+
+      const user = window.vaultAuth.currentUser;
+      const userId = user ? user.sub || user.email : 'local_user';
+
+      const result = await window.vaultStorage.importBackupData(backupData, userId);
+
+      // Si venían gavetas personalizadas, recargarlas en memoria
+      if (backupData.customDrawers && typeof backupData.customDrawers === 'object') {
+        const customDrawers = await window.vaultStorage.getSetting(`customDrawers_${userId}`) || {};
+        this.categories = { ...this.defaultCategories, ...customDrawers };
+        this.updateCategoryDropdowns();
+      }
+
+      // Recargar y re-renderizar documentos descifrados en memoria
+      await this.loadAndRenderDocuments();
+
+      this.showToast(`Recuperación exitosa: ${result.restoredCount} expedientes restaurados (Total: ${result.totalDocs}).`, 'success');
+    } catch (err) {
+      console.error('[BovedaApp] Error al importar respaldo:', err);
+      this.showToast('Error en la recuperación: ' + err.message, 'danger');
+    }
+  }
+
+  /**
    * Renderiza el Mueble Gavetero Inteligente con sus gavetas coloreadas y sus carpetas interiores
    */
   renderCabinet() {

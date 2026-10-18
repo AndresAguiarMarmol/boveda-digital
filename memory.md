@@ -62,6 +62,20 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-18 — Implementación Completa: Header/Footer Estáticos, Respaldo/Recuperación y Cinemática de Gavetas (Spec 001)
+- **Header y Footer Estáticos Anclados (`index.html`, `vault.css`):**
+  - Header anclado al top con texto exacto `"Boveda Digital "` (`fixed top-0`, `z-40`, glassmorphism).
+  - Footer anclado a la base con texto exacto `"Análisis/Diseño de Andres Aguiar V 1.0 Santiago de Chile octubre 2026 - Contacto +56933395447 - Whatsapp +56933395447"`.
+  - Resguardo de scroll vertical en el body (`pt-8 pb-10`) y exclusión en reglas de impresión `@media print`.
+- **Motor de Respaldo y Recuperación Zero-Knowledge (`storage.js`, `app.js`):**
+  - Botones "Respaldar" y "Recuperar" en el Navbar del Dashboard.
+  - Exportación en archivo JSON `boveda-backup-YYYY-MM-DD.json` con todos los payloads cifrados AES-256-GCM, IVs, checksums y gavetas personalizadas.
+  - Validación estricta de estructura e importación con estrategia Merge no destructiva en `IndexedDB`.
+- **Cinemática Física 3D de Apertura y Cierre de Gavetas (`vault.css`, `app.js`):**
+  - Simulación física de extracción con perspectiva 3D (`transform: translateY(-4px) scale(1.008)`), micro-interacción en tirador metálico activo (`scale(0.94)`) y deslizamiento cinemático sobre el riel interior con curvas elásticas `cubic-bezier`.
+  - Soporte de accesibilidad para `prefers-reduced-motion`.
+- **Suite de Pruebas Automatizadas:** 28/28 tests pasando en verde con `node --test tests/boveda.test.js tests/server.test.js`.
+
 ### 2026-10-17 — Implementación del Servidor HTTP y API REST Backend (Node.js Nativo)
 - **Servidor HTTP y API REST (`server.js`):** Creado servidor nativo Node.js sin dependencias externas (`node:http`, `node:crypto`, `node:fs`) que sirve tanto la SPA de Bóveda Digital como la API REST completa compatible con el ecosistema de Halterofilia.
 - **Endpoints Implementados:**

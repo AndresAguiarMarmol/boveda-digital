@@ -42,11 +42,15 @@
   <!-- Estilos del Sistema de Bóveda -->
   <link rel="stylesheet" href="assets/css/vault.css">
 </head>
-<body class="selection:bg-emerald-500/30 selection:text-emerald-300">
+<body class="selection:bg-emerald-500/30 selection:text-emerald-300 pt-8 pb-10">
 
   <!-- =========================================================================
-       VISTA 1: AUTENTICACIÓN UNIFICADA (LOGIN / REGISTRO)
+       HEADER ESTÁTICO ANCLADO AL TOP
        ========================================================================= -->
+  <header class="app-static-header fixed top-0 left-0 right-0 z-40 h-8 bg-slate-950/90 backdrop-blur-md border-b border-white/10 flex items-center justify-center px-4 select-none">
+    <span class="text-xs font-semibold tracking-wider text-slate-300 font-sans">Boveda Digital </span>
+  </header>
+
   <main id="auth-view" class="min-h-screen flex items-center justify-center p-4">
     <div class="w-full max-w-md vault-glass p-8 rounded-3xl border border-white/10 shadow-2xl relative">
       <!-- Glow Decorativo -->
@@ -237,6 +241,19 @@
           <button id="btn-header-upgrade" onclick="window.bovedaApp.openUpgradeModal();" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-semibold shadow-md shadow-amber-500/20 transition-all">
             <i data-lucide="crown" class="w-3.5 h-3.5"></i> Mejorar a PRO
           </button>
+
+          <!-- Botón Respaldo de Datos (Backup) -->
+          <button id="btn-backup-vault" title="Respaldar Datos de la Bóveda (Exportar JSON)" onclick="window.bovedaApp.handleExportBackup();" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-emerald-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span class="hidden lg:inline">Respaldar</span>
+          </button>
+
+          <!-- Botón Recuperación de Datos (Restore) -->
+          <button id="btn-restore-vault" title="Recuperar Datos de la Bóveda (Importar JSON)" onclick="document.getElementById('input-restore-backup').click();" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-cyan-400 hover:text-cyan-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            <span class="hidden lg:inline">Recuperar</span>
+          </button>
+          <input type="file" id="input-restore-backup" accept=".json,application/json" class="hidden" onchange="window.bovedaApp.handleImportBackup(this.files[0]); this.value = '';">
 
           <!-- Cambiar / Resetear PIN -->
           <button title="Cambiar o Restablecer PIN de Bóveda" onclick="window.bovedaApp.resetPin();" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-amber-400 hover:text-amber-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
@@ -848,7 +865,14 @@
   </dialog>
 
   <!-- Contenedor Flotante de Toasts -->
-  <div id="app-toast" class="fixed bottom-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border opacity-0 pointer-events-none transition-all duration-300"></div>
+  <div id="app-toast" class="fixed bottom-10 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border opacity-0 pointer-events-none transition-all duration-300"></div>
+
+  <!-- =========================================================================
+       FOOTER ESTÁTICO ANCLADO A LA BASE
+       ========================================================================= -->
+  <footer class="app-static-footer fixed bottom-0 left-0 right-0 z-40 py-1.5 bg-slate-950/95 backdrop-blur-md border-t border-white/10 flex items-center justify-center px-4 select-none text-center">
+    <span class="text-[11px] text-slate-400 font-sans tracking-tight">Análisis/Diseño de Andres Aguiar V 1.0 Santiago de Chile octubre 2026 - Contacto +56933395447 - Whatsapp +56933395447</span>
+  </footer>
 
   <!-- Scripts del Ecosistema Bóveda Digital -->
   <script src="assets/js/crypto.js"></script>

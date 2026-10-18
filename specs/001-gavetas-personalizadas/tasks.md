@@ -20,3 +20,22 @@
 
 - [x] **T7. Suite de pruebas unitarias automatizadas.** RF-1 a RF-9
   - Hecho cuando: `node --test tests/boveda.test.js` ejecuta y aprueba las pruebas de clasificación por gavetas, temas de credencial, validación de clave y reglas de eliminación con 0 fallos.
+
+- [x] **T8. Estructura y estilos de Header y Footer estáticos anclados.** RF-10, RF-11, RF-12, RNF-5
+  - Hecho cuando: `index.html` cuenta con `<header>` fijo (`top-0`) con texto exacto `"Boveda Digital "` y `<footer>` fijo (`bottom-0`) con texto exacto `"Análisis/Diseño de Andres Aguiar V 1.0 Santiago de Chile octubre 2026 - Contacto +56933395447 - Whatsapp +56933395447"`, con `pt-12 pb-14` de resguardo y `@media print` para ocultarlos.
+
+- [x] **T9. Motor de Respaldo y Recuperación en `storage.js` y funciones puras.** RF-13, RF-14, RF-15, RNF-6
+  - Hecho cuando: Las funciones `serializarBackupBoveda`, `validarBackupBoveda` y `fusionarDocumentosBackup` están disponibles y los métodos `exportBackupData` e `importBackupData` operan sobre `IndexedDB`.
+
+- [x] **T10. Botones de interfaz y flujo de Respaldo / Recuperación en `index.html` y `app.js`.** RF-13, RF-14, RF-15
+  - Hecho cuando: El navbar del Dashboard incluye los botones "Respaldar" y "Recuperar", descargando el archivo JSON al pulsar respaldar y restaurando reactivamente al seleccionar un backup válido.
+
+- [x] **T11. Cinemática y micro-interacciones de apertura física de gavetas.** RF-16, RF-17, RNF-7
+  - Hecho cuando: En `assets/css/vault.css`, al abrir una gaveta (`.drawer-unit.is-open`) se aprecia el movimiento de tracción hacia el frente, micro-interacción en el tirador `.drawer-handle:active` y deslizamiento cinemático elástico sobre el riel de carpetas.
+
+- [x] **T12. Suite de pruebas unitarias automatizadas para los nuevos requisitos.** RF-10 a RF-17
+  - Hecho cuando: `node --test tests/boveda.test.js tests/server.test.js` ejecuta y pasa el 100% de las pruebas incluyendo textos exactos, validación de esquema de backup, merge y estilos.
+
+- [x] **T13. Sincronización y publicación final en repositorio GitHub.**
+  - Hecho cuando: Todos los cambios están verificados y confirmados en la rama `main` de GitHub mediante `git push`.
+

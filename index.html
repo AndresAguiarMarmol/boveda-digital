@@ -1,16 +1,24 @@
 <!DOCTYPE html>
 <html lang="es" class="dark">
+
 <head>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bóveda Digital — Wallet de Documentos Segura con Cifrado Zero-Knowledge</title>
-  <meta name="description" content="Almacena, organiza y consulta documentos importantes con acceso 100% offline, cifrado local AES-256 y autenticación unificada.">
-  
+  <meta name="description"
+    content="Almacena, organiza y consulta documentos importantes con acceso 100% offline, cifrado local AES-256 y autenticación unificada.">
+  <!-- Google Identity Services (OAuth 2.0 para Sincronización Google Drive Zero-Knowledge) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -42,30 +50,36 @@
   <!-- Estilos del Sistema de Bóveda -->
   <link rel="stylesheet" href="assets/css/vault.css">
 </head>
+
 <body class="selection:bg-emerald-500/30 selection:text-emerald-300 pt-8 pb-10">
 
   <!-- =========================================================================
        HEADER ESTÁTICO ANCLADO AL TOP
        ========================================================================= -->
-  <header class="app-static-header fixed top-0 left-0 right-0 z-40 h-8 bg-slate-950/90 backdrop-blur-md border-b border-white/10 flex items-center justify-center px-4 select-none">
+  <header
+    class="app-static-header fixed top-0 left-0 right-0 z-40 h-8 bg-slate-950/90 backdrop-blur-md border-b border-white/10 flex items-center justify-center px-4 select-none">
     <span class="text-xs font-semibold tracking-wider text-slate-300 font-sans">Boveda Digital </span>
   </header>
 
   <main id="auth-view" class="min-h-screen flex items-center justify-center p-4">
     <div class="w-full max-w-md vault-glass p-8 rounded-3xl border border-white/10 shadow-2xl relative">
       <!-- Glow Decorativo -->
-      <div class="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none"></div>
+      <div
+        class="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none">
+      </div>
 
       <!-- Logotipo y Encabezado -->
       <div class="text-center mb-8 relative">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-500 p-0.5 mx-auto mb-4 shadow-lg shadow-emerald-500/20">
+        <div
+          class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-500 p-0.5 mx-auto mb-4 shadow-lg shadow-emerald-500/20">
           <div class="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center text-emerald-400">
             <i data-lucide="shield-check" class="w-8 h-8"></i>
           </div>
         </div>
         <h1 class="text-2xl font-bold tracking-tight text-white">Bóveda Digital</h1>
         <p class="text-xs text-slate-400 mt-1">Wallet de Documentos • Cifrado Local Zero-Knowledge</p>
-        <div class="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
+        <div
+          class="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
           <i data-lucide="lock" class="w-3 h-3"></i> AES-256-GCM + PBKDF2
         </div>
       </div>
@@ -78,7 +92,8 @@
             <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
               <i data-lucide="mail" class="w-4 h-4"></i>
             </div>
-            <input type="email" id="login-email" required value="andres.pro@boveda.com" placeholder="tu@correo.com" class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all">
+            <input type="email" id="login-email" required value="andres.pro@boveda.com" placeholder="tu@correo.com"
+              class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all">
           </div>
         </div>
 
@@ -88,11 +103,13 @@
             <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
               <i data-lucide="key-round" class="w-4 h-4"></i>
             </div>
-            <input type="password" id="login-password" required value="PasswordSeguro123!" placeholder="••••••••••••" class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all">
+            <input type="password" id="login-password" required value="PasswordSeguro123!" placeholder="••••••••••••"
+              class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all">
           </div>
         </div>
 
-        <button type="submit" class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 mt-2">
+        <button type="submit"
+          class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 mt-2">
           <span>Ingresar a la Bóveda</span>
           <i data-lucide="arrow-right" class="w-4 h-4"></i>
         </button>
@@ -102,10 +119,14 @@
       <div class="mt-6 pt-6 border-t border-white/10">
         <p class="text-xs text-slate-400 text-center mb-3">Autenticación Compatible con Ecosistema Halterofilia:</p>
         <div class="grid grid-cols-2 gap-2">
-          <button type="button" onclick="document.getElementById('login-email').value='demo.free@boveda.com'; document.getElementById('form-login').requestSubmit();" class="py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 flex items-center justify-center gap-1.5 transition-colors">
+          <button type="button"
+            onclick="document.getElementById('login-email').value='demo.free@boveda.com'; document.getElementById('form-login').requestSubmit();"
+            class="py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 flex items-center justify-center gap-1.5 transition-colors">
             <i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i> Plan Gratuito
           </button>
-          <button type="button" onclick="document.getElementById('login-email').value='andres.pro@boveda.com'; document.getElementById('form-login').requestSubmit();" class="py-2 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs text-amber-300 flex items-center justify-center gap-1.5 transition-colors font-medium">
+          <button type="button"
+            onclick="document.getElementById('login-email').value='andres.pro@boveda.com'; document.getElementById('form-login').requestSubmit();"
+            class="py-2 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs text-amber-300 flex items-center justify-center gap-1.5 transition-colors font-medium">
             <i data-lucide="crown" class="w-3.5 h-3.5 text-amber-400"></i> Plan PRO Ilimitado
           </button>
         </div>
@@ -118,24 +139,31 @@
        ========================================================================= -->
   <main id="pin-setup-view" class="min-h-screen flex items-center justify-center p-4 hidden">
     <div class="w-full max-w-md vault-glass p-8 rounded-3xl border border-white/10 shadow-2xl text-center">
-      <div class="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mx-auto mb-4">
+      <div
+        class="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mx-auto mb-4">
         <i data-lucide="shield-alert" class="w-7 h-7"></i>
       </div>
       <h2 class="text-xl font-bold text-white">Configura tu PIN de Bóveda</h2>
       <p class="text-xs text-slate-400 mt-2 max-w-sm mx-auto">
-        Tu PIN maestro se utilizará localmente para derivar la clave criptográfica AES-256 de tus documentos. Nunca viaja al servidor.
+        Tu PIN maestro se utilizará localmente para derivar la clave criptográfica AES-256 de tus documentos. Nunca
+        viaja al servidor.
       </p>
 
       <form id="form-pin-setup" class="mt-6 space-y-4 text-left">
         <div>
           <label class="block text-xs font-medium text-slate-300 mb-1">Nuevo PIN (Mínimo 4 dígitos)</label>
-          <input type="password" id="input-new-pin" required pattern="[0-9]*" inputmode="numeric" maxlength="6" placeholder="123456" class="w-full text-center tracking-widest text-lg font-mono py-2.5 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-500">
+          <input type="password" id="input-new-pin" required pattern="[0-9]*" inputmode="numeric" maxlength="6"
+            placeholder="123456"
+            class="w-full text-center tracking-widest text-lg font-mono py-2.5 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-500">
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-300 mb-1">Confirma tu PIN</label>
-          <input type="password" id="input-confirm-pin" required pattern="[0-9]*" inputmode="numeric" maxlength="6" placeholder="123456" class="w-full text-center tracking-widest text-lg font-mono py-2.5 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-500">
+          <input type="password" id="input-confirm-pin" required pattern="[0-9]*" inputmode="numeric" maxlength="6"
+            placeholder="123456"
+            class="w-full text-center tracking-widest text-lg font-mono py-2.5 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-500">
         </div>
-        <button type="submit" class="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25">
+        <button type="submit"
+          class="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25">
           Crear Clave y Desbloquear Bóveda
         </button>
       </form>
@@ -148,7 +176,8 @@
   <main id="pin-lock-view" class="min-h-screen flex items-center justify-center p-4 hidden">
     <div class="w-full max-w-sm vault-glass p-8 rounded-3xl border border-white/10 shadow-2xl text-center">
       <!-- Icono de Seguridad y Email -->
-      <div class="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-emerald-400 mx-auto mb-3 shadow-inner">
+      <div
+        class="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-emerald-400 mx-auto mb-3 shadow-inner">
         <i data-lucide="lock" class="w-6 h-6"></i>
       </div>
       <h2 class="text-lg font-bold text-white">Bóveda Protegida</h2>
@@ -166,32 +195,46 @@
 
       <!-- Teclado Numérico Táctil -->
       <div id="pin-pad-container" class="grid grid-cols-3 gap-3 justify-items-center max-w-[260px] mx-auto">
-        <button type="button" onclick="window.bovedaApp.handlePinKey('1')" class="pin-btn">1<span class="subtext">&nbsp;</span></button>
-        <button type="button" onclick="window.bovedaApp.handlePinKey('2')" class="pin-btn">2<span class="subtext">ABC</span></button>
-        <button type="button" onclick="window.bovedaApp.handlePinKey('3')" class="pin-btn">3<span class="subtext">DEF</span></button>
-        
-        <button type="button" onclick="window.bovedaApp.handlePinKey('4')" class="pin-btn">4<span class="subtext">GHI</span></button>
-        <button type="button" onclick="window.bovedaApp.handlePinKey('5')" class="pin-btn">5<span class="subtext">JKL</span></button>
-        <button type="button" onclick="window.bovedaApp.handlePinKey('6')" class="pin-btn">6<span class="subtext">MNO</span></button>
-        
-        <button type="button" onclick="window.bovedaApp.handlePinKey('7')" class="pin-btn">7<span class="subtext">PQRS</span></button>
-        <button type="button" onclick="window.bovedaApp.handlePinKey('8')" class="pin-btn">8<span class="subtext">TUV</span></button>
-        <button type="button" onclick="window.bovedaApp.handlePinKey('9')" class="pin-btn">9<span class="subtext">WXYZ</span></button>
-        
+        <button type="button" onclick="window.bovedaApp.handlePinKey('1')" class="pin-btn">1<span
+            class="subtext">&nbsp;</span></button>
+        <button type="button" onclick="window.bovedaApp.handlePinKey('2')" class="pin-btn">2<span
+            class="subtext">ABC</span></button>
+        <button type="button" onclick="window.bovedaApp.handlePinKey('3')" class="pin-btn">3<span
+            class="subtext">DEF</span></button>
+
+        <button type="button" onclick="window.bovedaApp.handlePinKey('4')" class="pin-btn">4<span
+            class="subtext">GHI</span></button>
+        <button type="button" onclick="window.bovedaApp.handlePinKey('5')" class="pin-btn">5<span
+            class="subtext">JKL</span></button>
+        <button type="button" onclick="window.bovedaApp.handlePinKey('6')" class="pin-btn">6<span
+            class="subtext">MNO</span></button>
+
+        <button type="button" onclick="window.bovedaApp.handlePinKey('7')" class="pin-btn">7<span
+            class="subtext">PQRS</span></button>
+        <button type="button" onclick="window.bovedaApp.handlePinKey('8')" class="pin-btn">8<span
+            class="subtext">TUV</span></button>
+        <button type="button" onclick="window.bovedaApp.handlePinKey('9')" class="pin-btn">9<span
+            class="subtext">WXYZ</span></button>
+
         <!-- Botón Biometría -->
-        <button type="button" title="Desbloquear con Face ID o Huella" onclick="window.bovedaApp.showToast('Face ID / Huella validada correctamente', 'success'); window.bovedaApp.switchView('dashboard');" class="pin-btn text-emerald-400 hover:text-emerald-300">
+        <button type="button" title="Desbloquear con Face ID o Huella"
+          onclick="window.bovedaApp.showToast('Face ID / Huella validada correctamente', 'success'); window.bovedaApp.switchView('dashboard');"
+          class="pin-btn text-emerald-400 hover:text-emerald-300">
           <i data-lucide="fingerprint" class="w-6 h-6"></i>
         </button>
-        <button type="button" onclick="window.bovedaApp.handlePinKey('0')" class="pin-btn">0<span class="subtext">+</span></button>
+        <button type="button" onclick="window.bovedaApp.handlePinKey('0')" class="pin-btn">0<span
+            class="subtext">+</span></button>
         <!-- Botón Borrar -->
-        <button type="button" title="Borrar dígito" onclick="window.bovedaApp.handlePinBackspace()" class="pin-btn text-slate-400 hover:text-white">
+        <button type="button" title="Borrar dígito" onclick="window.bovedaApp.handlePinBackspace()"
+          class="pin-btn text-slate-400 hover:text-white">
           <i data-lucide="delete" class="w-5 h-5"></i>
         </button>
       </div>
 
       <!-- Botón Restablecer / Resetear PIN -->
       <div class="mt-4 mb-1 text-center">
-        <button type="button" onclick="window.bovedaApp.resetPin()" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium inline-flex items-center gap-1.5 py-1 px-3 rounded-lg hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20">
+        <button type="button" onclick="window.bovedaApp.resetPin()"
+          class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium inline-flex items-center gap-1.5 py-1 px-3 rounded-lg hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20">
           <i data-lucide="key-round" class="w-3.5 h-3.5"></i>
           <span>¿Olvidaste tu PIN? Restablecer PIN</span>
         </button>
@@ -199,10 +242,12 @@
 
       <!-- Opciones de Salida -->
       <div class="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-xs text-slate-400">
-        <button type="button" onclick="window.vaultAuth.logout(); window.bovedaApp.switchView('auth');" class="hover:text-rose-400 transition-colors">
+        <button type="button" onclick="window.vaultAuth.logout(); window.bovedaApp.switchView('auth');"
+          class="hover:text-rose-400 transition-colors">
           Cerrar Sesión
         </button>
-        <button type="button" onclick="document.getElementById('modal-api-inspector').showModal();" class="hover:text-emerald-400 transition-colors inline-flex items-center gap-1">
+        <button type="button" onclick="document.getElementById('modal-api-inspector').showModal();"
+          class="hover:text-emerald-400 transition-colors inline-flex items-center gap-1">
           <i data-lucide="terminal" class="w-3.5 h-3.5"></i> Ver JWT & API
         </button>
       </div>
@@ -218,13 +263,15 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <!-- Logo y Estado de Seguridad -->
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-emerald-500/20">
+          <div
+            class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-emerald-500/20">
             <i data-lucide="shield-check" class="w-5 h-5"></i>
           </div>
           <div>
             <div class="flex items-center gap-2">
               <span class="font-bold text-white text-base tracking-tight">Bóveda Digital</span>
-              <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">AES-256</span>
+              <span
+                class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">AES-256</span>
             </div>
             <p class="text-[11px] text-slate-400 font-mono hidden sm:block">Zero-Knowledge Architecture</p>
           </div>
@@ -233,41 +280,80 @@
         <!-- Acciones del Encabezado -->
         <div class="flex items-center gap-2.5">
           <!-- Badge de Suscripción -->
-          <div id="dash-plan-badge" class="badge-status badge-valid cursor-pointer" onclick="window.bovedaApp.openUpgradeModal();">
+          <div id="dash-plan-badge" class="badge-status badge-valid cursor-pointer"
+            onclick="window.bovedaApp.openUpgradeModal();">
             <i data-lucide="shield" class="w-3.5 h-3.5"></i> Plan Gratuito
           </div>
 
           <!-- Botón Upgrade a Pro -->
-          <button id="btn-header-upgrade" onclick="window.bovedaApp.openUpgradeModal();" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-semibold shadow-md shadow-amber-500/20 transition-all">
+          <button id="btn-header-upgrade" onclick="window.bovedaApp.openUpgradeModal();"
+            class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-semibold shadow-md shadow-amber-500/20 transition-all">
             <i data-lucide="crown" class="w-3.5 h-3.5"></i> Mejorar a PRO
           </button>
 
+          <!-- Botón Instalar App a 1 Toque (PWA) -->
+          <button id="btn-pwa-install" title="Instalar Bóveda Digital en tu dispositivo (Arranque con 1 Toque)"
+            onclick="window.bovedaApp.triggerPwaInstall();"
+            class="hidden items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold shadow-md shadow-emerald-500/20 transition-all">
+            <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Instalar App</span>
+          </button>
+
+          <!-- Botón Sincronización con Google Drive -->
+          <button id="btn-gdrive-sync" title="Sincronización con Google Drive (Zero-Knowledge)"
+            onclick="window.bovedaApp.openGoogleDriveModal();"
+            class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-amber-400 hover:text-amber-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
+            <i data-lucide="hard-drive" class="w-4 h-4" id="icon-gdrive-sync"></i>
+            <span class="hidden lg:inline" id="label-gdrive-sync">Drive</span>
+            <span id="indicator-gdrive-sync" class="w-2 h-2 rounded-full bg-slate-400"
+              title="Estado: Google Drive Desconectado"></span>
+          </button>
+
+          <!-- Botón Sincronización en la Nube -->
+          <button id="btn-cloud-sync" title="Sincronización en la Nube (Clic para sincronizar ahora)"
+            onclick="window.bovedaApp.syncWithCloud();"
+            class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-sky-400 hover:text-sky-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
+            <i data-lucide="cloud" class="w-4 h-4" id="icon-cloud-sync"></i>
+            <span class="hidden lg:inline" id="label-cloud-sync">Nube</span>
+            <span id="indicator-cloud-sync" class="w-2 h-2 rounded-full bg-emerald-400"
+              title="Estado: Sincronizado"></span>
+          </button>
+
           <!-- Botón Respaldo de Datos (Backup) -->
-          <button id="btn-backup-vault" title="Respaldar Datos de la Bóveda (Exportar JSON)" onclick="window.bovedaApp.handleExportBackup();" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-emerald-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
+          <button id="btn-backup-vault" title="Respaldar Datos de la Bóveda (Exportar JSON)"
+            onclick="window.bovedaApp.handleExportBackup();"
+            class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-emerald-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
             <i data-lucide="download" class="w-4 h-4"></i>
             <span class="hidden lg:inline">Respaldar</span>
           </button>
 
           <!-- Botón Recuperación de Datos (Restore) -->
-          <button id="btn-restore-vault" title="Recuperar Datos de la Bóveda (Importar JSON)" onclick="document.getElementById('input-restore-backup').click();" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-cyan-400 hover:text-cyan-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
+          <button id="btn-restore-vault" title="Recuperar Datos de la Bóveda (Importar JSON)"
+            onclick="document.getElementById('input-restore-backup').click();"
+            class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-cyan-400 hover:text-cyan-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
             <i data-lucide="upload" class="w-4 h-4"></i>
             <span class="hidden lg:inline">Recuperar</span>
           </button>
-          <input type="file" id="input-restore-backup" accept=".json,application/json" class="hidden" onchange="window.bovedaApp.handleImportBackup(this.files[0]); this.value = '';">
+          <input type="file" id="input-restore-backup" accept=".json,application/json" class="hidden"
+            onchange="window.bovedaApp.handleImportBackup(this.files[0]); this.value = '';">
 
           <!-- Cambiar / Resetear PIN -->
-          <button title="Cambiar o Restablecer PIN de Bóveda" onclick="window.bovedaApp.resetPin();" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-amber-400 hover:text-amber-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
+          <button title="Cambiar o Restablecer PIN de Bóveda" onclick="window.bovedaApp.resetPin();"
+            class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-amber-400 hover:text-amber-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
             <i data-lucide="key-round" class="w-4 h-4"></i>
             <span class="hidden md:inline">PIN</span>
           </button>
 
           <!-- Inspector API / JWT -->
-          <button title="Inspector de API y Tokens JWT" onclick="document.getElementById('modal-api-inspector').showModal();" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors">
+          <button title="Inspector de API y Tokens JWT"
+            onclick="document.getElementById('modal-api-inspector').showModal();"
+            class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors">
             <i data-lucide="code-2" class="w-4 h-4"></i>
           </button>
 
           <!-- Bloqueo Inmediato -->
-          <button title="Bloquear Bóveda Inmediatamente" onclick="window.bovedaApp.lockVaultNow();" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors flex items-center gap-1.5 text-xs font-medium">
+          <button title="Bloquear Bóveda Inmediatamente" onclick="window.bovedaApp.lockVaultNow();"
+            class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors flex items-center gap-1.5 text-xs font-medium">
             <i data-lucide="lock" class="w-4 h-4"></i>
             <span class="hidden md:inline">Bloquear</span>
           </button>
@@ -277,7 +363,7 @@
 
     <!-- Contenedor Central -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-      
+
       <!-- Barra Superior de Estado y Cuota de Almacenamiento -->
       <section class="vault-glass p-5 rounded-2xl border border-white/10 mb-6">
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -305,14 +391,24 @@
           </div>
         </div>
 
-        <!-- Barra de Cuota -->
-        <div class="mt-4 pt-4 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
-          <div class="flex items-center gap-2">
-            <span class="text-slate-300 font-medium">Uso de Almacenamiento:</span>
-            <span id="quota-text" class="font-mono text-emerald-400">0 de 5 documentos</span>
+        <!-- Barra de Cuota y Estado Cloud -->
+        <div
+          class="mt-4 pt-4 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
+          <div class="flex items-center gap-4 flex-wrap">
+            <div class="flex items-center gap-2">
+              <span class="text-slate-300 font-medium">Uso de Almacenamiento:</span>
+              <span id="quota-text" class="font-mono text-emerald-400">0 de 5 documentos</span>
+            </div>
+            <div class="flex items-center gap-2 pl-3 border-l border-white/10">
+              <span class="text-slate-300 font-medium">Nube:</span>
+              <span id="cloud-status-text" class="font-mono text-xs text-sky-400 flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Conectada y Protegida
+              </span>
+            </div>
           </div>
           <div class="w-full sm:w-64 bg-slate-900 rounded-full h-1.5 overflow-hidden border border-white/10">
-            <div id="quota-bar" class="h-1.5 rounded-full bg-emerald-500 transition-all duration-500" style="width: 0%;"></div>
+            <div id="quota-bar" class="h-1.5 rounded-full bg-emerald-500 transition-all duration-500"
+              style="width: 0%;"></div>
           </div>
         </div>
       </section>
@@ -324,24 +420,30 @@
           <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
             <i data-lucide="search" class="w-4 h-4"></i>
           </div>
-          <input type="text" id="dashboard-search-input" placeholder="Buscar en todas las gavetas (título, nº doc, emisor)..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all">
+          <input type="text" id="dashboard-search-input"
+            placeholder="Buscar en todas las gavetas (título, nº doc, emisor)..."
+            class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all">
         </div>
 
         <!-- Controles de Gavetas y Botón Agregar -->
         <div class="flex items-center gap-2 flex-wrap">
-          <button type="button" onclick="window.bovedaApp.openNewDrawerModal()" class="px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-500/10 to-blue-500/10 hover:from-cyan-500/20 hover:to-blue-500/20 text-cyan-300 hover:text-white border border-cyan-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm">
+          <button type="button" onclick="window.bovedaApp.openNewDrawerModal()"
+            class="px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-500/10 to-blue-500/10 hover:from-cyan-500/20 hover:to-blue-500/20 text-cyan-300 hover:text-white border border-cyan-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm">
             <i data-lucide="folder-plus" class="w-3.5 h-3.5 text-cyan-400"></i>
             <span>Nueva Gaveta</span>
           </button>
-          <button type="button" onclick="window.bovedaApp.toggleAllDrawers(true)" class="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors">
+          <button type="button" onclick="window.bovedaApp.toggleAllDrawers(true)"
+            class="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <i data-lucide="chevrons-down" class="w-3.5 h-3.5 text-emerald-400"></i>
             <span class="hidden sm:inline">Abrir Gavetas</span>
           </button>
-          <button type="button" onclick="window.bovedaApp.toggleAllDrawers(false)" class="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors">
+          <button type="button" onclick="window.bovedaApp.toggleAllDrawers(false)"
+            class="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <i data-lucide="chevrons-up" class="w-3.5 h-3.5 text-slate-400"></i>
             <span class="hidden sm:inline">Cerrar Gavetas</span>
           </button>
-          <button type="button" onclick="window.bovedaApp.openNewDocumentModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-xs shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5 transition-all">
+          <button type="button" onclick="window.bovedaApp.openNewDocumentModal()"
+            class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-xs shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5 transition-all">
             <i data-lucide="plus" class="w-4 h-4"></i>
             <span>Archivar Documento</span>
           </button>
@@ -353,7 +455,8 @@
         <div class="flex items-center justify-between pb-4 mb-4 border-b border-white/10 text-xs text-slate-400">
           <div class="flex items-center gap-2">
             <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
-            <span class="font-mono text-slate-300 font-semibold uppercase tracking-wider">Archivador Principal de Bóveda</span>
+            <span class="font-mono text-slate-300 font-semibold uppercase tracking-wider">Archivador Principal de
+              Bóveda</span>
             <span class="hidden sm:inline text-slate-500">• 5 Gavetas Cifradas con AES-256</span>
           </div>
           <span id="cabinet-summary-text" class="font-mono text-emerald-400 text-xs">Cargando archivador...</span>
@@ -382,13 +485,15 @@
             <p class="text-xs text-slate-400">Cifrado local instantáneo con AES-256</p>
           </div>
         </div>
-        <button onclick="document.getElementById('modal-new-doc').close();" class="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white">
+        <button onclick="document.getElementById('modal-new-doc').close();"
+          class="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
       <!-- Botón de Escáner Cámara Inteligente -->
-      <div class="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-transparent border border-emerald-500/20 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div
+        class="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-transparent border border-emerald-500/20 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center">
             <i data-lucide="camera" class="w-5 h-5"></i>
@@ -398,22 +503,25 @@
             <p class="text-xs text-slate-400">Ajuste de bordes y lectura automática OCR de campos</p>
           </div>
         </div>
-        <button type="button" onclick="window.bovedaApp.startCameraScanner()" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition-colors flex items-center gap-1.5 whitespace-nowrap">
+        <button type="button" onclick="window.bovedaApp.startCameraScanner()"
+          class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition-colors flex items-center gap-1.5 whitespace-nowrap">
           <i data-lucide="scan" class="w-4 h-4"></i> Iniciar Escáner
         </button>
       </div>
 
       <!-- Visor de Escáner en Vivo (Simulado) -->
-      <div id="camera-scanner-view" class="scanner-container h-56 mb-6 hidden flex flex-col items-center justify-center border border-emerald-500/40">
+      <div id="camera-scanner-view"
+        class="scanner-container h-56 mb-6 hidden flex flex-col items-center justify-center border border-emerald-500/40">
         <div class="scan-laser"></div>
         <div class="corner-bracket corner-tl"></div>
         <div class="corner-bracket corner-tr"></div>
         <div class="corner-bracket corner-bl"></div>
         <div class="corner-bracket corner-br"></div>
-        
+
         <i data-lucide="scan-line" class="w-12 h-12 text-emerald-400 animate-pulse mb-2"></i>
         <p id="scanner-status-text" class="text-xs font-mono text-emerald-300">Enfocando documento...</p>
-        <button type="button" onclick="window.bovedaApp.stopCameraScanner()" class="mt-3 px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-slate-300">
+        <button type="button" onclick="window.bovedaApp.stopCameraScanner()"
+          class="mt-3 px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-slate-300">
           Cancelar Escaneo
         </button>
       </div>
@@ -423,11 +531,13 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Título del Documento *</label>
-            <input type="text" name="title" required placeholder="Ej: Pasaporte Internacional" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input type="text" name="title" required placeholder="Ej: Pasaporte Internacional"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Gaveta / Categoría *</label>
-            <select id="new-doc-category-select" name="category" required class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <select id="new-doc-category-select" name="category" required
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
               <option value="identidad">Gaveta 1: Identidad (Cédula, Pasaporte, DNI)</option>
               <option value="vehiculos">Gaveta 2: Vehículos (Licencia, Título, Seguro)</option>
               <option value="finanzas">Gaveta 3: Finanzas (Tarjetas, Cuentas)</option>
@@ -440,40 +550,48 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Número de Documento</label>
-            <input type="text" id="input-doc-number" name="doc_number" placeholder="Ej: 19.824.112-K" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white font-mono focus:outline-none focus:border-emerald-500">
+            <input type="text" id="input-doc-number" name="doc_number" placeholder="Ej: 19.824.112-K"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white font-mono focus:outline-none focus:border-emerald-500">
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Entidad Emisora</label>
-            <input type="text" id="input-issuer" name="issuer" placeholder="Ej: Registro Civil / DGT" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input type="text" id="input-issuer" name="issuer" placeholder="Ej: Registro Civil / DGT"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
           </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Fecha de Emisión</label>
-            <input type="date" name="issue_date" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input type="date" name="issue_date"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Fecha de Vencimiento (Alerta)</label>
-            <input type="date" id="input-expiry-date" name="expiry_date" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input type="date" id="input-expiry-date" name="expiry_date"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-medium text-slate-300 mb-1">Archivo Adjunto (PDF o Imagen)</label>
-          <input type="file" name="attachment_file" accept=".pdf,image/*" class="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-300 hover:file:bg-emerald-500/30">
+          <input type="file" name="attachment_file" accept=".pdf,image/*"
+            class="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-300 hover:file:bg-emerald-500/30">
         </div>
 
         <div>
           <label class="block text-xs font-medium text-slate-300 mb-1">Notas privadas cifradas</label>
-          <textarea name="notes" rows="2" placeholder="Información sensible adicional..." class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500"></textarea>
+          <textarea name="notes" rows="2" placeholder="Información sensible adicional..."
+            class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500"></textarea>
         </div>
 
         <div class="pt-4 flex items-center justify-end gap-3">
-          <button type="button" onclick="document.getElementById('modal-new-doc').close();" class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium">
+          <button type="button" onclick="document.getElementById('modal-new-doc').close();"
+            class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium">
             Cancelar
           </button>
-          <button type="submit" class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs shadow-lg shadow-emerald-500/20 flex items-center gap-1.5">
+          <button type="submit"
+            class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs shadow-lg shadow-emerald-500/20 flex items-center gap-1.5">
             <i data-lucide="lock" class="w-4 h-4"></i> Cifrar y Guardar en Gaveta
           </button>
         </div>
@@ -485,13 +603,15 @@
        MODAL: DETALLE, LECTURA, IMPRESIÓN Y MODIFICACIÓN DE DOCUMENTO
        ========================================================================= -->
   <dialog id="modal-doc-detail" class="rounded-3xl shadow-2xl p-0">
-    <div class="w-[94vw] max-w-2xl vault-glass rounded-3xl border border-white/10 p-6 sm:p-8 text-white relative max-h-[90vh] overflow-y-auto">
-      
+    <div
+      class="w-[94vw] max-w-2xl vault-glass rounded-3xl border border-white/10 p-6 sm:p-8 text-white relative max-h-[90vh] overflow-y-auto">
+
       <!-- Barra Superior de Acciones Rápidas (Leer, Imprimir, Modificar, Compartir, Eliminar) -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/10 gap-3 mb-6">
         <div>
           <div class="flex items-center gap-2">
-            <span id="detail-category-badge" class="text-[11px] font-bold font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">CATEGORÍA</span>
+            <span id="detail-category-badge"
+              class="text-[11px] font-bold font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">CATEGORÍA</span>
             <span id="detail-status-pill"></span>
           </div>
           <h3 id="detail-title" class="text-xl sm:text-2xl font-bold text-slate-100 mt-1">Título del Expediente</h3>
@@ -500,30 +620,37 @@
         <!-- Botones de Acción del Expediente -->
         <div class="flex items-center gap-1.5 flex-wrap">
           <!-- Imprimir -->
-          <button type="button" title="Imprimir expediente oficial" onclick="window.bovedaApp.printSelectedDocument()" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors">
+          <button type="button" title="Imprimir expediente oficial" onclick="window.bovedaApp.printSelectedDocument()"
+            class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <i data-lucide="printer" class="w-4 h-4 text-cyan-400"></i>
             <span class="hidden sm:inline">Imprimir</span>
           </button>
 
           <!-- Modificar Características -->
-          <button type="button" id="btn-toggle-edit" title="Modificar características del documento" onclick="window.bovedaApp.toggleEditDocumentMode()" class="p-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors">
+          <button type="button" id="btn-toggle-edit" title="Modificar características del documento"
+            onclick="window.bovedaApp.toggleEditDocumentMode()"
+            class="p-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <i data-lucide="edit-3" class="w-4 h-4"></i>
             <span id="btn-toggle-edit-text" class="hidden sm:inline">Modificar</span>
           </button>
 
           <!-- Compartir Seguro -->
-          <button type="button" title="Generar enlace temporal seguro" onclick="window.bovedaApp.openShareModal()" class="p-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors">
+          <button type="button" title="Generar enlace temporal seguro" onclick="window.bovedaApp.openShareModal()"
+            class="p-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <i data-lucide="share-2" class="w-4 h-4"></i>
             <span class="hidden sm:inline">Compartir</span>
           </button>
 
           <!-- Eliminar -->
-          <button type="button" title="Eliminar documento permanentemente" onclick="window.bovedaApp.handleDeleteSelectedDocument()" class="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center gap-1.5 transition-colors">
+          <button type="button" title="Eliminar documento permanentemente"
+            onclick="window.bovedaApp.handleDeleteSelectedDocument()"
+            class="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
 
           <!-- Cerrar Modal -->
-          <button type="button" onclick="document.getElementById('modal-doc-detail').close();" class="p-2.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
+          <button type="button" onclick="document.getElementById('modal-doc-detail').close();"
+            class="p-2.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
@@ -542,7 +669,9 @@
             <span class="text-xs text-slate-400 block mb-0.5">Número de Documento</span>
             <div class="flex items-center justify-between">
               <span id="detail-number" class="font-mono font-bold text-emerald-400 text-lg">N/A</span>
-              <button title="Copiar al portapapeles" onclick="window.bovedaApp.copyToClipboard(document.getElementById('detail-number').textContent)" class="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
+              <button title="Copiar al portapapeles"
+                onclick="window.bovedaApp.copyToClipboard(document.getElementById('detail-number').textContent)"
+                class="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
                 <i data-lucide="copy" class="w-4 h-4"></i>
               </button>
             </div>
@@ -577,7 +706,8 @@
            MODO 2: MODIFICACIÓN DE CARACTERÍSTICAS
            ========================================== -->
       <form id="doc-edit-view" class="space-y-4 hidden" onsubmit="window.bovedaApp.handleSaveModifiedDocument(event)">
-        <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+        <div
+          class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
           <i data-lucide="shield-check" class="w-4 h-4"></i>
           <span>Modificando características. Los cambios se re-cifrarán con AES-256 al guardar.</span>
         </div>
@@ -585,11 +715,13 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Título *</label>
-            <input type="text" id="edit-title" required class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input type="text" id="edit-title" required
+              class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Gaveta / Categoría *</label>
-            <select id="edit-category" required class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <select id="edit-category" required
+              class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
               <option value="identidad">Gaveta 1: Identidad</option>
               <option value="vehiculos">Gaveta 2: Vehículos</option>
               <option value="finanzas">Gaveta 3: Finanzas</option>
@@ -602,40 +734,48 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Número de Documento</label>
-            <input type="text" id="edit-doc-number" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white font-mono focus:outline-none focus:border-emerald-500">
+            <input type="text" id="edit-doc-number"
+              class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white font-mono focus:outline-none focus:border-emerald-500">
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Entidad Emisora</label>
-            <input type="text" id="edit-issuer" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input type="text" id="edit-issuer"
+              class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
           </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Fecha de Emisión</label>
-            <input type="date" id="edit-issue-date" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input type="date" id="edit-issue-date"
+              class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-300 mb-1">Fecha de Vencimiento</label>
-            <input type="date" id="edit-expiry-date" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input type="date" id="edit-expiry-date"
+              class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500">
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-medium text-slate-300 mb-1">Reemplazar Archivo Adjunto (Opcional)</label>
-          <input type="file" id="edit-attachment-file" accept=".pdf,image/*" class="w-full text-xs text-slate-400 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-300 hover:file:bg-emerald-500/30">
+          <input type="file" id="edit-attachment-file" accept=".pdf,image/*"
+            class="w-full text-xs text-slate-400 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-300 hover:file:bg-emerald-500/30">
         </div>
 
         <div>
           <label class="block text-xs font-medium text-slate-300 mb-1">Notas privadas</label>
-          <textarea id="edit-notes" rows="2" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500"></textarea>
+          <textarea id="edit-notes" rows="2"
+            class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500"></textarea>
         </div>
 
         <div class="pt-3 flex items-center justify-end gap-2.5">
-          <button type="button" onclick="window.bovedaApp.toggleEditDocumentMode(false)" class="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold">
+          <button type="button" onclick="window.bovedaApp.toggleEditDocumentMode(false)"
+            class="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold">
             Cancelar
           </button>
-          <button type="submit" class="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 flex items-center gap-1.5">
+          <button type="submit"
+            class="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 flex items-center gap-1.5">
             <i data-lucide="check" class="w-4 h-4"></i> Guardar Cambios Re-cifrados
           </button>
         </div>
@@ -648,7 +788,8 @@
        ========================================================================= -->
   <dialog id="modal-share-doc" class="rounded-3xl shadow-2xl p-0">
     <div class="w-[92vw] max-w-md vault-glass rounded-3xl border border-white/10 p-6 text-white text-center">
-      <div class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mx-auto mb-3">
+      <div
+        class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mx-auto mb-3">
         <i data-lucide="link-2" class="w-6 h-6"></i>
       </div>
       <h3 class="text-lg font-bold">Generar Enlace Temporal Cifrado</h3>
@@ -668,15 +809,18 @@
         <div>
           <label class="block text-xs text-slate-400 mb-1">Enlace Seguro Cifrado</label>
           <div class="flex items-center gap-2">
-            <input type="text" id="share-generated-link" readonly class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-xs text-cyan-300 font-mono">
-            <button onclick="window.bovedaApp.copyToClipboard(document.getElementById('share-generated-link').value)" class="p-2 rounded-xl bg-cyan-500 text-slate-950 font-bold hover:bg-cyan-400">
+            <input type="text" id="share-generated-link" readonly
+              class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-xs text-cyan-300 font-mono">
+            <button onclick="window.bovedaApp.copyToClipboard(document.getElementById('share-generated-link').value)"
+              class="p-2 rounded-xl bg-cyan-500 text-slate-950 font-bold hover:bg-cyan-400">
               <i data-lucide="copy" class="w-4 h-4"></i>
             </button>
           </div>
         </div>
       </div>
 
-      <button type="button" onclick="document.getElementById('modal-share-doc').close();" class="mt-6 w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold">
+      <button type="button" onclick="document.getElementById('modal-share-doc').close();"
+        class="mt-6 w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold">
         Cerrar
       </button>
     </div>
@@ -688,7 +832,8 @@
   <dialog id="modal-upgrade" class="rounded-3xl shadow-2xl p-0">
     <div class="w-[92vw] max-w-2xl vault-glass rounded-3xl border border-white/10 p-6 sm:p-8 text-white relative">
       <div class="text-center mb-6">
-        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+        <span
+          class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
           <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Monetización & Licenciamiento
         </span>
         <h3 class="text-2xl font-bold mt-2">Pasa al Plan Bóveda PRO</h3>
@@ -703,42 +848,60 @@
         <div class="p-5 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
           <div>
             <h4 class="text-sm font-bold text-slate-300">Plan Básico / Free</h4>
-            <p class="text-2xl font-bold text-white mt-1">$0 <span class="text-xs text-slate-400 font-normal">/ para siempre</span></p>
+            <p class="text-2xl font-bold text-white mt-1">$0 <span class="text-xs text-slate-400 font-normal">/ para
+                siempre</span></p>
             <ul class="mt-4 space-y-2 text-xs text-slate-300">
-              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Hasta 5 documentos</li>
-              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Cifrado local AES-256</li>
-              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Modo 100% Offline</li>
-              <li class="flex items-center gap-2 text-slate-500 line-through"><i data-lucide="x" class="w-4 h-4"></i> Respaldo en la nube</li>
-              <li class="flex items-center gap-2 text-slate-500 line-through"><i data-lucide="x" class="w-4 h-4"></i> Alertas push automáticas</li>
+              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Hasta 5
+                documentos</li>
+              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Cifrado
+                local AES-256</li>
+              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Modo 100%
+                Offline</li>
+              <li class="flex items-center gap-2 text-slate-500 line-through"><i data-lucide="x" class="w-4 h-4"></i>
+                Respaldo en la nube</li>
+              <li class="flex items-center gap-2 text-slate-500 line-through"><i data-lucide="x" class="w-4 h-4"></i>
+                Alertas push automáticas</li>
             </ul>
           </div>
-          <span class="mt-6 block text-center py-2 rounded-xl bg-white/5 text-xs text-slate-400 font-medium">Plan Actual</span>
+          <span class="mt-6 block text-center py-2 rounded-xl bg-white/5 text-xs text-slate-400 font-medium">Plan
+            Actual</span>
         </div>
 
         <!-- Plan PRO -->
-        <div class="p-5 rounded-2xl bg-gradient-to-b from-amber-500/10 to-slate-900/90 border border-amber-500/40 relative flex flex-col justify-between shadow-xl shadow-amber-500/5">
-          <div class="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold text-[10px] uppercase tracking-wide">
+        <div
+          class="p-5 rounded-2xl bg-gradient-to-b from-amber-500/10 to-slate-900/90 border border-amber-500/40 relative flex flex-col justify-between shadow-xl shadow-amber-500/5">
+          <div
+            class="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold text-[10px] uppercase tracking-wide">
             Recomendado
           </div>
           <div>
             <h4 class="text-sm font-bold text-amber-300">Plan Bóveda PRO</h4>
-            <p class="text-2xl font-bold text-white mt-1">$4.99 <span class="text-xs text-slate-400 font-normal">/ mes o $39/año</span></p>
+            <p class="text-2xl font-bold text-white mt-1">$4.99 <span class="text-xs text-slate-400 font-normal">/ mes o
+                $39/año</span></p>
             <ul class="mt-4 space-y-2 text-xs text-slate-200">
-              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> <strong>Documentos ilimitados</strong></li>
-              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Alertas de vencimiento proactivas</li>
-              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Copia de seguridad cifrada en nube</li>
-              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Exportación masiva PDF/ZIP</li>
-              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Pasarela Stripe / Apple / Google</li>
+              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i>
+                <strong>Documentos ilimitados</strong>
+              </li>
+              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Alertas de
+                vencimiento proactivas</li>
+              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Copia de
+                seguridad cifrada en nube</li>
+              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Exportación
+                masiva PDF/ZIP</li>
+              <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-amber-400"></i> Pasarela
+                Stripe / Apple / Google</li>
             </ul>
           </div>
-          <button id="btn-confirm-upgrade" onclick="window.bovedaApp.processSimulatedProCheckout()" class="mt-6 w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5">
+          <button id="btn-confirm-upgrade" onclick="window.bovedaApp.processSimulatedProCheckout()"
+            class="mt-6 w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5">
             <i data-lucide="credit-card" class="w-4 h-4"></i> Activar Plan PRO ($4.99/mes)
           </button>
         </div>
       </div>
 
       <div class="text-center">
-        <button type="button" onclick="document.getElementById('modal-upgrade').close();" class="text-xs text-slate-400 hover:text-white">
+        <button type="button" onclick="document.getElementById('modal-upgrade').close();"
+          class="text-xs text-slate-400 hover:text-white">
           Continuar con mi plan actual
         </button>
       </div>
@@ -749,10 +912,12 @@
        MODAL: CREAR NUEVA GAVETA PERSONALIZADA (NUEVO CONCEPTO)
        ========================================================================= -->
   <dialog id="modal-new-drawer" class="rounded-3xl shadow-2xl p-0">
-    <div class="w-[94vw] max-w-lg vault-glass rounded-3xl border border-white/10 p-6 sm:p-7 text-white max-h-[90vh] overflow-y-auto">
+    <div
+      class="w-[94vw] max-w-lg vault-glass rounded-3xl border border-white/10 p-6 sm:p-7 text-white max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-5">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+          <div
+            class="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
             <i data-lucide="folder-plus" class="w-5 h-5"></i>
           </div>
           <div>
@@ -760,7 +925,8 @@
             <p class="text-xs text-slate-400">Añade una nueva categoría o concepto a tu bóveda</p>
           </div>
         </div>
-        <button type="button" onclick="document.getElementById('modal-new-drawer').close();" class="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
+        <button type="button" onclick="document.getElementById('modal-new-drawer').close();"
+          class="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -768,12 +934,16 @@
       <form id="form-new-drawer" class="space-y-4" onsubmit="window.bovedaApp.handleSaveNewDrawer(event)">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre o Concepto de la Gaveta *</label>
-          <input type="text" id="new-drawer-label" required placeholder="Ej: Educación y Títulos, Legal y Notarial, Mascotas..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-cyan-500">
+          <input type="text" id="new-drawer-label" required
+            placeholder="Ej: Educación y Títulos, Legal y Notarial, Mascotas..."
+            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-cyan-500">
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Subtítulo descriptivo *</label>
-          <input type="text" id="new-drawer-subtitle" required placeholder="Ej: Diplomas, certificados académicos y homologaciones" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-cyan-500">
+          <input type="text" id="new-drawer-subtitle" required
+            placeholder="Ej: Diplomas, certificados académicos y homologaciones"
+            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-sm text-white focus:outline-none focus:border-cyan-500">
         </div>
 
         <!-- Selector de Color de Gaveta -->
@@ -791,10 +961,12 @@
         </div>
 
         <div class="pt-4 flex items-center justify-end gap-3 border-t border-white/10">
-          <button type="button" onclick="document.getElementById('modal-new-drawer').close();" class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium">
+          <button type="button" onclick="document.getElementById('modal-new-drawer').close();"
+            class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium">
             Cancelar
           </button>
-          <button type="submit" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center gap-1.5 transition-all">
+          <button type="submit"
+            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center gap-1.5 transition-all">
             <i data-lucide="check" class="w-4 h-4"></i>
             <span>Instalar Nueva Gaveta</span>
           </button>
@@ -807,7 +979,8 @@
        MODAL: INSPECTOR DE ARQUITECTURA, JWT Y API REST
        ========================================================================= -->
   <dialog id="modal-api-inspector" class="rounded-3xl shadow-2xl p-0">
-    <div class="w-[94vw] max-w-3xl vault-glass rounded-3xl border border-white/10 p-6 text-white max-h-[85vh] overflow-y-auto">
+    <div
+      class="w-[94vw] max-w-3xl vault-glass rounded-3xl border border-white/10 p-6 text-white max-h-[85vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
         <div class="flex items-center gap-2.5">
           <div class="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -818,7 +991,8 @@
             <p class="text-xs text-slate-400">Integración 100% compatible con backend de Halterofilia</p>
           </div>
         </div>
-        <button onclick="document.getElementById('modal-api-inspector').close();" class="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white">
+        <button onclick="document.getElementById('modal-api-inspector').close();"
+          class="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -853,24 +1027,136 @@
         <div class="p-4 rounded-xl bg-slate-950 border border-white/10 font-sans">
           <span class="text-amber-300 font-bold block mb-2">Matriz de Endpoints de la API REST:</span>
           <div class="space-y-1.5 text-xs font-mono">
-            <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">POST</span> <span class="text-slate-300">/api/v1/auth/login</span> (Login unificado JWT)</div>
-            <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">POST</span> <span class="text-slate-300">/api/v1/auth/refresh</span> (Refresh token rotativo)</div>
-            <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">GET</span> <span class="text-slate-300">/api/v1/subscription/status</span> (Validación de licencia)</div>
-            <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">POST</span> <span class="text-slate-300">/api/v1/documents/batch-sync</span> (Sync cifrado Zero-Knowledge)</div>
-            <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">POST</span> <span class="text-slate-300">/api/v1/subscription/checkout</span> (Integración Stripe/IAP)</div>
+            <div class="flex items-center gap-2"><span
+                class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">POST</span> <span
+                class="text-slate-300">/api/v1/auth/login</span> (Login unificado JWT)</div>
+            <div class="flex items-center gap-2"><span
+                class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">POST</span> <span
+                class="text-slate-300">/api/v1/auth/refresh</span> (Refresh token rotativo)</div>
+            <div class="flex items-center gap-2"><span
+                class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">GET</span> <span
+                class="text-slate-300">/api/v1/subscription/status</span> (Validación de licencia)</div>
+            <div class="flex items-center gap-2"><span
+                class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">POST</span> <span
+                class="text-slate-300">/api/v1/documents/batch-sync</span> (Sync cifrado Zero-Knowledge)</div>
+            <div class="flex items-center gap-2"><span
+                class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">POST</span> <span
+                class="text-slate-300">/api/v1/subscription/checkout</span> (Integración Stripe/IAP)</div>
           </div>
         </div>
       </div>
     </div>
   </dialog>
 
+  <!-- =========================================================================
+       MODAL DE SINCRONIZACIÓN CON GOOGLE DRIVE (ZERO-KNOWLEDGE)
+       ========================================================================= -->
+  <dialog id="modal-gdrive-sync" class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-md">
+    <div class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
+      <button onclick="document.getElementById('modal-gdrive-sync').close();"
+        class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/5">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+          <i data-lucide="hard-drive" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Sincronización con Google Drive</h3>
+          <p class="text-xs text-slate-400">Copia de seguridad cifrada con arquitectura Zero-Knowledge</p>
+        </div>
+      </div>
+
+      <!-- Garantía Criptográfica Zero-Knowledge -->
+      <div class="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-300/90 mb-5 flex items-start gap-2.5">
+        <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
+        <span><strong>Seguridad Máxima:</strong> Tu archivo de respaldo se sube 100% cifrado con AES-256-GCM. Google jamás tiene acceso a tu PIN maestro ni puede descifrar tus documentos.</span>
+      </div>
+
+      <!-- Estado de Conexión -->
+      <div class="bg-slate-950/60 border border-white/5 rounded-2xl p-4 mb-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400 font-medium">Estado de Conexión:</span>
+          <span id="gdrive-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-white/10">
+            <span id="gdrive-status-led" class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+            <span id="gdrive-status-text">Desconectado</span>
+          </span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-slate-400">Último respaldo en Drive:</span>
+          <span id="gdrive-last-backup-text" class="text-slate-300 font-mono">Ninguno registrado</span>
+        </div>
+        <!-- Sincronización Automática Toggle -->
+        <div class="flex items-center justify-between text-xs pt-2.5 border-t border-white/5">
+          <div class="flex flex-col">
+            <span class="text-slate-300 font-medium flex items-center gap-1.5">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-amber-400"></i>
+              Sincronización Automática
+            </span>
+            <span class="text-[11px] text-slate-400">Respaldar al crear, editar o borrar documentos</span>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="toggle-gdrive-autosync" class="sr-only peer" checked
+              onchange="window.bovedaApp.handleGoogleDriveToggleAutoSync(this.checked);">
+            <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Botones de Acción -->
+      <div class="space-y-3 mb-6">
+        <button id="btn-gdrive-connect" onclick="window.bovedaApp.handleGoogleDriveConnect();"
+          class="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/10">
+          <i data-lucide="log-in" class="w-4 h-4" id="icon-gdrive-connect"></i>
+          <span id="label-gdrive-connect">Conectar con Google Drive</span>
+        </button>
+
+        <div class="grid grid-cols-2 gap-3">
+          <button id="btn-gdrive-upload" onclick="window.bovedaApp.handleGoogleDriveUpload();"
+            class="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-emerald-400 hover:text-emerald-300 font-medium text-xs flex items-center justify-center gap-1.5 transition-all">
+            <i data-lucide="cloud-upload" class="w-4 h-4"></i>
+            <span>Subir Respaldo</span>
+          </button>
+
+          <button id="btn-gdrive-download" onclick="window.bovedaApp.handleGoogleDriveDownload();"
+            class="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-cyan-400 hover:text-cyan-300 font-medium text-xs flex items-center justify-center gap-1.5 transition-all">
+            <i data-lucide="cloud-download" class="w-4 h-4"></i>
+            <span>Restaurar de Drive</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Configuración Avanzada / OAuth Client ID -->
+      <details class="text-xs border-t border-white/5 pt-4">
+        <summary class="cursor-pointer text-slate-400 hover:text-slate-300 flex items-center gap-1.5 font-medium select-none">
+          <i data-lucide="settings" class="w-3.5 h-3.5"></i> Configuración de Google OAuth Client ID
+        </summary>
+        <div class="mt-3 space-y-2">
+          <p class="text-[11px] text-slate-400">Si utilizas tu propia consola de Google Cloud, ingresa tu <strong>Client ID</strong> Web (alcance: <code>drive.file</code>):</p>
+          <input type="text" id="input-gdrive-client-id" placeholder="ej. 123456789-xxxx.apps.googleusercontent.com"
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs font-mono focus:border-amber-400 focus:outline-none">
+          <div class="flex justify-end pt-1">
+            <button onclick="window.bovedaApp.saveGoogleDriveClientId();"
+              class="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium transition-colors">
+              Guardar Client ID
+            </button>
+          </div>
+        </div>
+      </details>
+    </div>
+  </dialog>
+
   <!-- Contenedor Flotante de Toasts -->
-  <div id="app-toast" class="fixed bottom-10 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border opacity-0 pointer-events-none transition-all duration-300"></div>
+  <div id="app-toast"
+    class="fixed bottom-10 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border opacity-0 pointer-events-none transition-all duration-300">
+  </div>
 
   <!-- =========================================================================
        FOOTER ESTÁTICO ANCLADO A LA BASE
        ========================================================================= -->
-  <footer class="app-static-footer fixed bottom-0 left-0 right-0 z-40 py-1.5 bg-slate-950/95 backdrop-blur-md border-t border-white/10 flex items-center justify-center px-4 select-none text-center">
+  <footer
+    class="app-static-footer fixed bottom-0 left-0 right-0 z-40 py-1.5 bg-slate-950/95 backdrop-blur-md border-t border-white/10 flex items-center justify-center px-4 select-none text-center">
     <span class="text-[11px] text-slate-400 font-sans tracking-tight">Análisis/Diseño de Andres Aguiar V 1.0 Santiago de Chile octubre 2026 - Contacto +56933395447 - Whatsapp +56933395447</span>
   </footer>
 
@@ -878,6 +1164,8 @@
   <script src="assets/js/crypto.js"></script>
   <script src="assets/js/storage.js"></script>
   <script src="assets/js/auth.js"></script>
+  <script src="assets/js/gdrive.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
+
 </html>

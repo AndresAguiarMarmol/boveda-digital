@@ -1,0 +1,6 @@
+node_modules/
+*.lnk
+data/*.json
+!data/.gitkeep
+.DS_Store
+Thumbs.db

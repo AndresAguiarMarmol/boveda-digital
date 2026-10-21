@@ -26,6 +26,9 @@ Registro de todo lo que debe preservarse entre sesiones de trabajo: arquitectura
   - `userSalt`: Salt criptográfico único para derivar la clave maestra local.
   - `vaultPinHash_<email>`: Hash SHA-256 del PIN + Salt para validación de desbloqueo.
   - `customDrawers_<userId>`: Diccionario de gavetas personalizadas creadas por el usuario (`label`, `subtitle`, `color`, `icon`, `isCustom`, `drawerNumber`).
+  - `gdrive_client_id` / `gdrive_last_backup`: Configuración y marca temporal del último respaldo cifrado en Google Drive.
+  - `gdrive_token` / `gdrive_token_expiry`: Token de acceso efímero para operaciones con la Google Drive API (scope `drive.file`).
+  - `gdrive_auto_sync`: Booleano de activación de la sincronización automática en segundo plano (debounced 1.5s).
 
 - **Almacén `audit_log` (KeyPath: `id` auto-incremental):**
   - Registro de eventos (`LOGIN_SUCCESS`, `VAULT_UNLOCKED`, `DOC_CREATED`, `DOC_VIEWED`, `DOC_DELETED`, etc.).
@@ -46,21 +49,90 @@ Compatible con el backend centralizado de la app de Halterofilia:
 }
 ```
 
+### C. Persistencia en Servidor / Cloud (`server.js`, `data/vault_cloud.json`)
+- **Almacenamiento persistente en disco/cloud:**
+  - `users`: Directorio de usuarios registrados con hash SHA-256 de contraseña y perfil de suscripción.
+  - `documents`: Mapa persistente por `user_id` con registros cifrados Zero-Knowledge (`encrypted_payload`, `iv`, `checksum`, `category`, `title`, `expiry_date`, `created_at`, `updated_at`).
+  - `shares`: Registro de tokens de acceso efímeros compartidos.
+
 ---
 
 ## 2. Decisiones vigentes
 
 - **Cifrado Zero-Knowledge y Web Crypto API:** El backend centralizado nunca recibe las claves maestras ni los documentos en texto claro. La clave simétrica de 256 bits se deriva exclusivamente en el cliente mediante PBKDF2 (100,000 iteraciones, SHA-256) a partir del PIN maestro del usuario y un salt criptográfico.
 - **Acceso 100% Offline:** Toda la información cifrada reside en `IndexedDB`, permitiendo consultar y crear documentos sin conexión a internet.
+- **Sincronización Cloud Bidireccional y Despliegue en Google Cloud Run:** La aplicación cuenta con sincronización bidireccional automática y manual (`batch-sync`, descarga remota y eliminación sincronizada `DELETE /api/v1/documents/:id`). Detecta automáticamente el origen del servidor, actualiza el indicador de estado en la UI (🟢 Sincronizado, 🟡 Sincronizando, ⚪ Offline) y se distribuye con `Dockerfile` nativo optimizado para despliegue en Google Cloud Run.
 - **Compatibilidad con Backend Existente (Halterofilia):** Utiliza autenticación REST sobre HTTPS con tokens JWT / OAuth2, refresh tokens rotativos y sesiones administradas en servidor.
 - **Modelo de Licenciamiento:**
   - *Plan Gratuito:* Limitado a un máximo de 5 documentos y almacenamiento local.
   - *Plan PRO:* Almacenamiento ilimitado, alertas de vencimiento, copias de seguridad cifradas en la nube y exportación avanzada.
 - **Metáfora Visual de Mueble Gavetero (Filing Cabinet) Cromático y Extensible:** La organización de documentos se estructura en un archivador blindado donde cada gaveta cuenta con una identidad cromática única (LED, reflejo de tirador, bordes, riel y credencial visual). El sistema incluye 5 gavetas base (`identidad` Cyan, `vehiculos` Esmeralda, `finanzas` Ámbar, `residencia` Púrpura, `salud` Rosa) y permite al usuario crear gavetas personalizadas con nuevos conceptos, selector de color HSL/Hex y selector de iconos Lucide, con persistencia offline en `IndexedDB`. Los documentos cuentan con soporte completo de ciclo de vida: lectura descifrada, impresión limpia (`window.print()`), modificación con re-cifrado AES-256-GCM y eliminación.
+- **Arranque a 1 Toque (PWA) y Soporte Multiplataforma:** La aplicación implementa arquitectura Progressive Web App (`manifest.json`, `sw.js` y meta tags de pantalla completa standalone). En dispositivos móviles (Android/iOS) se instala como app nativa en la pantalla de inicio abriendo al instante sin barras de navegador. En escritorios Windows cuenta con lanzador batch de 1 toque (`iniciar.bat`) que orquesta el servidor local y el navegador.
+- **Sincronización y Respaldo Cifrado con Google Drive (Zero-Knowledge):** Los respaldos destinados a Google Drive exportan el paquete criptográfico estandarizado (`boveda_backup.json` con payloads AES-256-GCM, IVs y checksums SHA-256). Google Drive almacena exclusivamente el archivo blob cifrado bajo el scope restringido `drive.file` / `drive.appdata`, garantizando que ni Google ni terceros pueden acceder a los datos sin el PIN maestro derivado por el usuario. La aplicación cuenta con sincronización automática continua en segundo plano (con debounce de 1.5s y refresco silencioso de token GIS) que se activa automáticamente al desbloquear la bóveda, crear, modificar o eliminar expedientes y gavetas personalizadas, configurable mediante un interruptor interactivo en la interfaz.
+- **Compatibilidad y Despliegue en GitHub Pages:** Toda la aplicación opera con rutas relativas (`./`), soporte de PWA en subdirectorios (`manifest.json`, `sw.js`), bypass de Jekyll (`.nojekyll`) y contingencia offline 100% autónoma en `IndexedDB` con sincronización Zero-Knowledge en Google Drive, permitiendo desplegarse de forma transparente y gratuita en GitHub Pages (`https://andresaguiarmarmol.github.io/boveda-digital/`) sin necesidad obligatoria de servidor Node.js backend.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-21 — Compatibilidad Completa con GitHub Pages y PWA en Subrutas
+- **Rutas Relativas y Caché de PWA (`manifest.json`, `sw.js`, `index.html`):**
+  - Ajustados enlaces de manifiesto (`./manifest.json`), `start_url` (`./index.html`) y `scope` (`./`) para operar transparentemente en subdirectorios de GitHub Pages (`/boveda-digital/`).
+  - Cacheo resiliente en `sw.js` con rutas relativas a la raíz del scope e inclusión de `gdrive.js`.
+  - Corrección de enlaces seguros compartidos en `app.js` conservando la ruta completa del repositorio.
+- **Configuración de Despliegue Estático (`.nojekyll`, `.gitignore`):**
+  - Incorporado `.nojekyll` para evitar el filtrado del motor Jekyll de GitHub Pages.
+  - Creado `.gitignore` para excluir datos locales pesados de pruebas (`data/*.json`, `*.lnk`).
+- **Documentación de Orígenes OAuth 2.0 (`docs/google-drive-setup.md`):**
+  - Especificado el origen autorizado `https://andresaguiarmarmol.github.io` para Google Drive en despliegues sobre GitHub Pages.
+
+### 2026-10-20 — Sincronización Automática con Google Drive y Guía de Configuración OAuth 2.0
+- **Sincronización Automática Continua (`assets/js/gdrive.js`):**
+  - Incorporados `autoSyncEnabled` (persistido en IndexedDB como `gdrive_auto_sync`), `setAutoSync()` y `triggerAutoSync(userId, reason)`.
+  - Mecanismo de debounce de 1.5s para empaquetar operaciones continuas sin saturar la cuota de la API de Google Drive.
+  - Soporte de re-autenticación silenciosa (`{ prompt: '' }`) en tokens expirados cuando la sesión OAuth ya fue autorizada.
+- **Integración Reactiva en el Ciclo de Vida (`assets/js/app.js`):**
+  - Invocación de `triggerAutoSync()` en los eventos de desbloqueo de bóveda (`submitPinUnlock`), creación de documentos (`handleSaveNewDocument`), edición y re-cifrado (`saveDocumentEdit`), eliminación (`handleDeleteSelectedDocument`) y creación/borrado de gavetas personalizadas.
+  - Actualización dinámica de estados en UI (`syncing`, `synced`, `error`) con animación de pulso y LED reactivo en la barra superior.
+- **Control de Usuario en la Interfaz (`index.html`):**
+  - Añadido interruptor interactivo `#toggle-gdrive-autosync` en el diálogo `#modal-gdrive-sync` para activar/desactivar la auto-sincronización con un solo toque.
+- **Guía de Configuración Paso a Paso (`docs/google-drive-setup.md`):**
+  - Creado manual detallado para configurar el proyecto en Google Cloud Console, habilitar la Drive API, definir el scope `drive.file` y crear el Client ID para la Web.
+- **Suite de Pruebas Automatizadas:** 35/35 tests pasando en verde (`node --test tests/boveda.test.js tests/server.test.js`).
+
+### 2026-10-19 — Implementación Integral: Arranque a 1 Toque (PWA) y Sincronización Zero-Knowledge con Google Drive
+- **Módulo Criptográfico de Google Drive (`assets/js/gdrive.js`):**
+  - Implementada la clase `VaultGoogleDrive` con soporte para Google Identity Services (GIS) OAuth 2.0 y scope restringido `https://www.googleapis.com/auth/drive.file`.
+  - Soporte de subida multipart `POST /upload/drive/v3/files` y actualización `PATCH` del archivo `boveda_digital_backup.json`.
+  - Soporte de descarga directa y fusión segura mediante `window.vaultStorage.importBackupData()`.
+  - Modo sandbox / demostración offline para pruebas sin requerir configuración previa en Google Cloud Console.
+- **Interfaz Gráfica y Modales de Google Drive (`index.html`, `app.js`):**
+  - Botón `#btn-gdrive-sync` en el Navbar del Dashboard con icono de disco duro y LED reactivo de estado (🟢 Conectado, ⚪ Desconectado).
+  - Diálogo interactivo `#modal-gdrive-sync` con información de estado, marca temporal de último respaldo, acciones de conectar/desconectar, subida/descarga en 1 toque y configuración de Client ID personalizado.
+- **Arranque a 1 Toque y PWA Instalable (`manifest.json`, `sw.js`, `index.html`, `iniciar.bat`):**
+  - Botón reactivo `#btn-pwa-install` en la barra superior que intercepta `beforeinstallprompt` para permitir instalación en 1 solo clic.
+  - Iconos de alta resolución generados en `assets/img/icon-192.png`, `assets/img/icon-512.png` y vectorial `assets/img/icon.svg`.
+  - Service worker `sw.js` con soporte offline Stale-While-Revalidate y sincronización en segundo plano (`cloud-sync`).
+  - Script lanzador para Windows [iniciar.bat](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/iniciar.bat).
+- **Suite de Pruebas Automatizadas:** 35/35 tests pasando en verde (`node --test tests/boveda.test.js tests/server.test.js`).
+
+### 2026-10-19 — Sincronización en la Nube / Google Cloud y Persistencia Server (Cloud Run Ready)
+- **Persistencia en Disco del Servidor (`server.js`):** Implementada persistencia automática en `data/vault_cloud.json` (`loadDB` / `saveDB`) para mantener cuentas de usuario, expedientes cifrados y enlaces compartidos entre reinicios o despliegues del servidor.
+- **Endpoint de Eliminación Cloud (`server.js`):** Añadido `DELETE /api/v1/documents/:id` protegido por JWT para propagar borrados de expedientes en la nube.
+- **Compatibilidad Dual de Tokens JWT (`server.js`, `auth.js`):** Soporte simultáneo para claims `accessToken` (camelCase) y `access_token` (snake_case).
+- **Servicio de Sincronización Bidireccional en Cliente (`storage.js`, `app.js`):**
+  - Métodos `markDocumentSynced` y `mergeCloudDocuments` en `VaultStorage`.
+  - Método `syncWithCloud` y `updateCloudSyncUI` en `BovedaApp`, disparado automáticamente al desbloquear la bóveda, crear, modificar o eliminar expedientes, y con botón manual en la barra de navegación.
+- **Componentes Visuales de Nube en la Interfaz (`index.html`):**
+  - Botón `#btn-cloud-sync` con LED indicador de estado dinámico (🟢 Conectada, 🟡 Sincronizando, ⚪ Modo Offline).
+  - Badge `#cloud-status-text` en la barra superior de métricas del dashboard.
+- **Configuración de Despliegue en Google Cloud (`Dockerfile`, `.dockerignore`, `docs/google-cloud-deployment.md`):** Contenedor ultraligero Node 20 Alpine y documentación paso a paso para despliegue serverless con `gcloud run deploy`.
+- **Suite de Pruebas Unitarias Automatizadas:** 33/33 tests pasando en verde (`node --test tests/boveda.test.js tests/server.test.js`).
+
+### 2026-10-18 — Corrección de Error en Recuperación de Respaldo (`storage.js`, `boveda.test.js`)
+- **Corrección de llamada en `importBackupData` (`storage.js`):** Se corrigió la invocación `this.saveSetting` a `this.setSetting` al fusionar gavetas personalizadas (`customDrawers`) durante la restauración de un respaldo.
+- **Alias de Compatibilidad (`storage.js`):** Se incorporó el método `saveSetting(key, value)` en la clase `VaultStorage` como alias transparente de `setSetting(key, value)` para garantizar retrocompatibilidad e invulnerabilidad ante llamadas con cualquier convención de nombre.
+- **Suite de Pruebas Unitarias:** Se añadió prueba automatizada en `tests/boveda.test.js` validando la existencia de `saveSetting` y la correcta importación y persistencia de gavetas personalizadas al restaurar respaldos (29/29 tests pasando en verde).
 
 ### 2026-10-18 — Implementación Completa: Header/Footer Estáticos, Respaldo/Recuperación y Cinemática de Gavetas (Spec 001)
 - **Header y Footer Estáticos Anclados (`index.html`, `vault.css`):**

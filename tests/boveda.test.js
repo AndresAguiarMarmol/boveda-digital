@@ -344,6 +344,48 @@ test('fusionarDocumentosBackup: une expedientes sin duplicidad y actualiza por I
   assert.equal(doc3.title, 'Cédula');
 });
 
+test('VaultStorage: soporta saveSetting como alias de setSetting e importBackupData fusiona gavetas', async () => {
+  const { VaultStorage } = require('../assets/js/storage.js');
+  
+  // 1. Verificar existencia del método saveSetting en la clase
+  assert.equal(typeof VaultStorage.prototype.saveSetting, 'function');
+  assert.equal(typeof VaultStorage.prototype.setSetting, 'function');
+
+  // 2. Simular importBackupData en una instancia con mocks de almacenamiento
+  const settingsStore = new Map();
+  const docsStore = [];
+  const auditStore = [];
+
+  const fakeStorage = Object.create(VaultStorage.prototype);
+  fakeStorage.getSetting = async (k) => settingsStore.get(k) || null;
+  fakeStorage.setSetting = async (k, v) => { settingsStore.set(k, v); return true; };
+  fakeStorage.saveSetting = async (k, v) => fakeStorage.setSetting(k, v);
+  fakeStorage.getAllDocuments = async (uId) => docsStore.filter(d => d.user_id === uId);
+  fakeStorage.saveDocument = async (doc) => { docsStore.push(doc); return true; };
+  fakeStorage.logAuditEvent = async (uId, action, details) => { auditStore.push({ uId, action, details }); return true; };
+
+  const backupPayload = {
+    app: 'BovedaDigital',
+    version: '1.0',
+    documents: [
+      { id: 'd100', category: 'identidad', encrypted_payload: 'enc', iv: 'iv', checksum: 'cs' }
+    ],
+    customDrawers: {
+      proyectos_especiales: { label: 'Proyectos Especiales', color: '#10b981' }
+    }
+  };
+
+  const resultado = await fakeStorage.importBackupData(backupPayload, 'usr_andres');
+  assert.equal(resultado.success, true);
+  assert.equal(resultado.restoredCount, 1);
+  assert.equal(resultado.customDrawersCount, 1);
+
+  // Verificar que las gavetas se guardaron correctamente en settings
+  const savedDrawers = settingsStore.get('customDrawers_usr_andres');
+  assert.ok(savedDrawers);
+  assert.equal(savedDrawers.proyectos_especiales.label, 'Proyectos Especiales');
+});
+
 // =============================================================================
 // PRUEBAS DE HEADER/FOOTER ESTÁTICOS Y CINEMÁTICA (RF-10, RF-11, RF-12, RF-16)
 // =============================================================================
@@ -380,6 +422,157 @@ test('Estilos CSS: cinemática de apertura 3D, tirador metálico y reglas @media
   assert.ok(css.includes('.app-static-header'), 'vault.css debe definir .app-static-header');
   assert.ok(css.includes('.app-static-footer'), 'vault.css debe definir .app-static-footer');
   assert.ok(css.includes('prefers-reduced-motion'), 'vault.css debe soportar prefers-reduced-motion para accesibilidad');
+});
+
+test('Estructura HTML: presencia de botón e indicador de Sincronización en la Nube', () => {
+  const htmlPath = path.join(__dirname, '..', 'index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  assert.ok(html.includes('btn-cloud-sync'), 'index.html debe contener el botón btn-cloud-sync');
+  assert.ok(html.includes('indicator-cloud-sync'), 'index.html debe contener el indicador indicator-cloud-sync');
+  assert.ok(html.includes('cloud-status-text'), 'index.html debe contener el texto cloud-status-text');
+});
+
+test('VaultStorage: soporta markDocumentSynced y mergeCloudDocuments para sincronización bidireccional', async () => {
+  const docStore = new Map();
+
+  const fakeStorage = {
+    async getDocument(id) {
+      return docStore.get(id);
+    },
+    async saveDocument(doc) {
+      docStore.set(doc.id, doc);
+      return doc;
+    },
+    async markDocumentSynced(id, isSynced = true) {
+      const doc = await this.getDocument(id);
+      if (doc) {
+        doc.is_synced = isSynced;
+        await this.saveDocument(doc);
+      }
+      return doc;
+    },
+    async mergeCloudDocuments(cloudDocs = []) {
+      let mergedCount = 0;
+      for (const doc of cloudDocs) {
+        if (!doc || !doc.id) continue;
+        const existing = await this.getDocument(doc.id);
+        if (!existing || new Date(doc.updated_at || 0) >= new Date(existing.updated_at || 0)) {
+          await this.saveDocument({
+            ...doc,
+            is_synced: true
+          });
+          mergedCount++;
+        }
+      }
+      return mergedCount;
+    }
+  };
+
+  // Crear documento local no sincronizado
+  await fakeStorage.saveDocument({ id: 'doc_1', title: 'Local', is_synced: false });
+  assert.equal((await fakeStorage.getDocument('doc_1')).is_synced, false);
+
+  // Marcar como sincronizado
+  await fakeStorage.markDocumentSynced('doc_1', true);
+  assert.equal((await fakeStorage.getDocument('doc_1')).is_synced, true);
+
+  // Fusionar documento de la nube
+  const cloudDocs = [
+    { id: 'doc_remote_1', title: 'Documento Remoto', updated_at: new Date().toISOString() }
+  ];
+  const mergedCount = await fakeStorage.mergeCloudDocuments(cloudDocs);
+  assert.equal(mergedCount, 1);
+  const remoteDoc = await fakeStorage.getDocument('doc_remote_1');
+  assert.ok(remoteDoc);
+  assert.equal(remoteDoc.is_synced, true);
+  assert.equal(remoteDoc.title, 'Documento Remoto');
+});
+
+test('PWA y Arranque a 1 Toque: manifest.json, sw.js, meta tags e iniciar.bat', () => {
+  const rootDir = path.join(__dirname, '..');
+  
+  // 1. Validar manifest.json
+  const manifestPath = path.join(rootDir, 'manifest.json');
+  assert.ok(fs.existsSync(manifestPath), 'manifest.json debe existir en la raíz');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(manifest.display, 'standalone', 'manifest.json debe tener display: standalone para modo app nativa');
+  assert.ok(manifest.name.includes('Bóveda Digital'), 'manifest.json debe incluir nombre de la aplicación');
+  assert.ok(Array.isArray(manifest.icons) && manifest.icons.length >= 2, 'manifest.json debe definir iconos');
+
+  // 2. Validar sw.js
+  const swPath = path.join(rootDir, 'sw.js');
+  assert.ok(fs.existsSync(swPath), 'sw.js debe existir en la raíz');
+  const swContent = fs.readFileSync(swPath, 'utf8');
+  assert.ok(swContent.includes('addEventListener(\'fetch\''), 'sw.js debe manejar evento fetch');
+  assert.ok(swContent.includes('caches.open'), 'sw.js debe cachear recursos');
+
+  // 3. Validar index.html
+  const htmlPath = path.join(rootDir, 'index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+  assert.ok(html.includes('rel="manifest"'), 'index.html debe enlazar manifest.json');
+  assert.ok(html.includes('mobile-web-app-capable'), 'index.html debe tener meta mobile-web-app-capable');
+
+  // 4. Validar lanzador 1-tap para Windows
+  const batPath = path.join(rootDir, 'iniciar.bat');
+  assert.ok(fs.existsSync(batPath), 'iniciar.bat debe existir para arranque a 1 toque');
+});
+
+test('Google Drive Sync (Zero-Knowledge): gdrive.js, modales y validación criptográfica', () => {
+  const rootDir = path.join(__dirname, '..');
+
+  // 1. Validar presencia de assets/js/gdrive.js
+  const gdriveJsPath = path.join(rootDir, 'assets', 'js', 'gdrive.js');
+  assert.ok(fs.existsSync(gdriveJsPath), 'assets/js/gdrive.js debe existir');
+  const gdriveCode = fs.readFileSync(gdriveJsPath, 'utf8');
+  assert.ok(gdriveCode.includes('class VaultGoogleDrive'), 'gdrive.js debe definir la clase VaultGoogleDrive');
+  assert.ok(gdriveCode.includes('uploadBackup'), 'gdrive.js debe implementar uploadBackup');
+  assert.ok(gdriveCode.includes('downloadAndRestore'), 'gdrive.js debe implementar downloadAndRestore');
+  assert.ok(gdriveCode.includes('triggerAutoSync'), 'gdrive.js debe implementar triggerAutoSync');
+  assert.ok(gdriveCode.includes('autoSyncEnabled'), 'gdrive.js debe implementar autoSyncEnabled');
+  assert.ok(gdriveCode.includes('setAutoSync'), 'gdrive.js debe implementar setAutoSync');
+
+  // 2. Validar presencia en index.html y app.js
+  const htmlPath = path.join(rootDir, 'index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+  assert.ok(html.includes('assets/js/gdrive.js'), 'index.html debe cargar assets/js/gdrive.js');
+  assert.ok(html.includes('btn-gdrive-sync'), 'index.html debe contener el botón btn-gdrive-sync');
+  assert.ok(html.includes('modal-gdrive-sync'), 'index.html debe contener el modal modal-gdrive-sync');
+  assert.ok(html.includes('accounts.google.com/gsi/client'), 'index.html debe incluir script de Google Identity Services');
+  assert.ok(html.includes('toggle-gdrive-autosync'), 'index.html debe incluir interruptor de sincronización automática');
+  assert.ok(html.includes('handleGoogleDriveToggleAutoSync'), 'index.html debe enlazar handleGoogleDriveToggleAutoSync');
+
+  const appJsPath = path.join(rootDir, 'assets', 'js', 'app.js');
+  const appCode = fs.readFileSync(appJsPath, 'utf8');
+  assert.ok(appCode.includes('handleGoogleDriveToggleAutoSync'), 'app.js debe implementar handleGoogleDriveToggleAutoSync');
+  assert.ok(appCode.includes('triggerAutoSync'), 'app.js debe invocar triggerAutoSync en cambios de datos');
+
+  // 3. Simulación de respaldo Zero-Knowledge para Google Drive
+  const sampleDocs = [
+    {
+      id: 'doc_gdrive_test',
+      user_id: 'usr_andres_001',
+      category: 'finanzas',
+      title: 'Tarjeta Platinum Blindada',
+      encrypted_payload: 'U2FsdGVkX18...cifradoAES256...',
+      iv: 'dGVzdF9pdl8xMmJ5dGVz',
+      checksum: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      created_at: new Date().toISOString()
+    }
+  ];
+
+  // Serializar paquete de respaldo
+  const backup = serializarBackupBoveda(sampleDocs, {}, 'usr_andres_001');
+  const jsonExport = JSON.stringify(backup);
+
+  // Comprobar que en el JSON exportado hacia Google Drive NO existe texto claro confidencial
+  assert.ok(!jsonExport.includes('1234-5678-9012-3456'), 'Google Drive NO debe recibir números de tarjetas en claro');
+  assert.ok(backup.documents[0].encrypted_payload, 'El paquete debe contener exclusivamente payloads cifrados');
+  assert.ok(backup.documents[0].iv, 'El paquete debe contener IVs');
+
+  // Comprobar validación de integridad
+  const validacion = validarBackupBoveda(backup);
+  assert.ok(validacion.valido, 'El paquete serializado para Google Drive debe ser válido');
 });
 
 

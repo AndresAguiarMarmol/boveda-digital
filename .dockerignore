@@ -1,0 +1,11 @@
+.git
+.gitignore
+.agents
+tests
+coverage
+scratch
+node_modules
+*.log
+memory.md
+specs
+Prompt Inicial.txt

@@ -187,4 +187,83 @@ test('Servidor API: Inicialización y Suite de Endpoints', async (t) => {
     assert.equal(getShareRes.status, 200);
     assert.equal(getShareRes.body.encrypted_payload, 'U2FsdGVkX1efimero...');
   });
+
+  await t.test('POST /api/v1/documents/batch-sync: sincroniza en lote documentos Zero-Knowledge', async () => {
+    const loginRes = await makeRequest(
+      '/api/v1/auth/login',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'andres.pro@boveda.com', password: 'PasswordSeguro123!' }
+    );
+    const token = loginRes.body.accessToken;
+
+    const batchDocs = [
+      {
+        id: 'doc_batch_sync_001',
+        title: 'Contrato Notarial Cifrado',
+        category: 'residencia',
+        encrypted_payload: 'U2FsdGVkX1_notarial_payload',
+        iv: 'iv_batch_001',
+        checksum: 'checksum_001'
+      },
+      {
+        id: 'doc_batch_sync_002',
+        title: 'Certificado Médico Cifrado',
+        category: 'salud',
+        encrypted_payload: 'U2FsdGVkX1_salud_payload',
+        iv: 'iv_batch_002',
+        checksum: 'checksum_002'
+      }
+    ];
+
+    const syncRes = await makeRequest(
+      '/api/v1/documents/batch-sync',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      },
+      { documents: batchDocs }
+    );
+
+    assert.equal(syncRes.status, 200);
+    assert.equal(syncRes.body.status, 'synced');
+    assert.equal(syncRes.body.syncedCount, 2);
+
+    // Verificar que ambos documentos existen en la lista remota
+    const listRes = await makeRequest('/api/v1/documents', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(listRes.status, 200);
+    assert.ok(listRes.body.documents.some(d => d.id === 'doc_batch_sync_001'));
+    assert.ok(listRes.body.documents.some(d => d.id === 'doc_batch_sync_002'));
+  });
+
+  await t.test('DELETE /api/v1/documents/:id: elimina documento cifrado en la nube', async () => {
+    const loginRes = await makeRequest(
+      '/api/v1/auth/login',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'andres.pro@boveda.com', password: 'PasswordSeguro123!' }
+    );
+    const token = loginRes.body.accessToken;
+
+    // Eliminar el documento creado previamente en batch-sync
+    const deleteRes = await makeRequest('/api/v1/documents/doc_batch_sync_001', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    assert.equal(deleteRes.status, 200);
+    assert.equal(deleteRes.body.success, true);
+    assert.equal(deleteRes.body.id, 'doc_batch_sync_001');
+
+    // Intentar eliminarlo de nuevo debe retornar 404
+    const deleteAgainRes = await makeRequest('/api/v1/documents/doc_batch_sync_001', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(deleteAgainRes.status, 404);
+  });
 });

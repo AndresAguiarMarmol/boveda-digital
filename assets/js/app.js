@@ -12,50 +12,51 @@ class BovedaApp {
     this.selectedDoc = null;
     this.activeView = 'auth'; // 'auth' | 'pin-setup' | 'pin-lock' | 'dashboard'
     this.isEditingCurrentDoc = false;
-    
+    this.deferredInstallPrompt = null;
+
     // Estado de gavetas abiertas (por defecto la primera gaveta está abierta)
     this.openDrawers = new Set(['identidad']);
-    
+
     // Las 5 Gavetas Oficiales del Archivador de Bóveda (cada una con su paleta de color distintiva)
     this.defaultCategories = {
-      identidad: { 
-        id: 'identidad', 
-        drawerNumber: 1, 
-        label: 'Identidad', 
-        subtitle: 'Cédulas, Pasaportes, DNI y Credenciales Oficiales', 
-        icon: 'user-check', 
+      identidad: {
+        id: 'identidad',
+        drawerNumber: 1,
+        label: 'Identidad',
+        subtitle: 'Cédulas, Pasaportes, DNI y Credenciales Oficiales',
+        icon: 'user-check',
         color: '#06b6d4' // Cyan Eléctrico de Seguridad
       },
-      vehiculos: { 
-        id: 'vehiculos', 
-        drawerNumber: 2, 
-        label: 'Vehículos', 
-        subtitle: 'Licencias de Conducir, Títulos de Propiedad y Seguros', 
-        icon: 'car', 
+      vehiculos: {
+        id: 'vehiculos',
+        drawerNumber: 2,
+        label: 'Vehículos',
+        subtitle: 'Licencias de Conducir, Títulos de Propiedad y Seguros',
+        icon: 'car',
         color: '#10b981' // Verde Esmeralda Vial
       },
-      finanzas: { 
-        id: 'finanzas', 
-        drawerNumber: 3, 
-        label: 'Finanzas', 
-        subtitle: 'Tarjetas de Crédito/Débito, Cuentas y Certificaciones', 
-        icon: 'credit-card', 
+      finanzas: {
+        id: 'finanzas',
+        drawerNumber: 3,
+        label: 'Finanzas',
+        subtitle: 'Tarjetas de Crédito/Débito, Cuentas y Certificaciones',
+        icon: 'credit-card',
         color: '#f59e0b' // Ámbar / Oro Financiero
       },
-      residencia: { 
-        id: 'residencia', 
-        drawerNumber: 4, 
-        label: 'Residencia', 
-        subtitle: 'Contratos de Alquiler, Facturas de Servicios y Empadronamiento', 
-        icon: 'home', 
+      residencia: {
+        id: 'residencia',
+        drawerNumber: 4,
+        label: 'Residencia',
+        subtitle: 'Contratos de Alquiler, Facturas de Servicios y Empadronamiento',
+        icon: 'home',
         color: '#8b5cf6' // Púrpura / Violeta Notarial
       },
-      salud: { 
-        id: 'salud', 
-        drawerNumber: 5, 
-        label: 'Salud y Viajes', 
-        subtitle: 'Carnets de Vacunación, Seguros Médicos y Visados', 
-        icon: 'activity', 
+      salud: {
+        id: 'salud',
+        drawerNumber: 5,
+        label: 'Salud y Viajes',
+        subtitle: 'Carnets de Vacunación, Seguros Médicos y Visados',
+        icon: 'activity',
         color: '#ec4899' // Rosa / Magenta Médico
       }
     };
@@ -64,7 +65,34 @@ class BovedaApp {
 
   async init() {
     this.bindEvents();
-    
+
+    // Inicializar Google Drive Integration
+    if (window.vaultGoogleDrive) {
+      await window.vaultGoogleDrive.init();
+      this.updateGoogleDriveUI();
+    }
+
+    // Listener para instalación PWA a 1 toque
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.deferredInstallPrompt = e;
+      const btnInstall = document.getElementById('btn-pwa-install');
+      if (btnInstall) {
+        btnInstall.classList.remove('hidden');
+        btnInstall.classList.add('inline-flex');
+      }
+    });
+
+    window.addEventListener('appinstalled', () => {
+      this.deferredInstallPrompt = null;
+      const btnInstall = document.getElementById('btn-pwa-install');
+      if (btnInstall) {
+        btnInstall.classList.add('hidden');
+        btnInstall.classList.remove('inline-flex');
+      }
+      this.showToast('¡Bóveda Digital instalada con éxito!', 'success');
+    });
+
     // Evaluar estado de sesión
     const authState = await window.vaultAuth.init();
     if (authState.status === 'LOCKED') {
@@ -107,6 +135,14 @@ class BovedaApp {
       if (userEmailEl && window.vaultAuth.currentUser) {
         userEmailEl.textContent = window.vaultAuth.currentUser.email;
       }
+    } else if (viewName === 'pin-setup') {
+      const pin1 = document.getElementById('input-new-pin');
+      const pin2 = document.getElementById('input-confirm-pin');
+      if (pin1) {
+        pin1.value = '';
+        setTimeout(() => pin1.focus(), 60);
+      }
+      if (pin2) pin2.value = '';
     } else if (viewName === 'dashboard') {
       this.renderDashboardHeader();
       this.loadAndRenderDocuments();
@@ -148,7 +184,7 @@ class BovedaApp {
   /**
    * Carga los documentos desde IndexedDB y los descifra con la clave maestra en memoria
    */
-  async loadAndRenderDocuments() {
+  async loadAndRenderDocuments(skipCloudSync = false) {
     if (!window.vaultAuth.masterKey) {
       this.showToast('Bóveda bloqueada. Ingrese su PIN.', 'warning');
       this.switchView('pin-lock');
@@ -202,13 +238,20 @@ class BovedaApp {
 
     this.renderMetrics();
     this.renderCabinet();
+
+    if (!skipCloudSync) {
+      this.syncWithCloud(true);
+      const user = window.vaultAuth?.currentUser;
+      const userId = user ? (user.sub || user.email) : 'local_user';
+      window.vaultGoogleDrive?.triggerAutoSync(userId, 'unlock');
+    }
   }
 
   /**
    * Sincroniza las opciones de todas las gavetas en los selectores de los modales
    */
   updateCategoryDropdowns() {
-    const optionsHtml = Object.values(this.categories).map(cat => 
+    const optionsHtml = Object.values(this.categories).map(cat =>
       `<option value="${cat.id}">Gaveta ${cat.drawerNumber}: ${cat.label}</option>`
     ).join('');
 
@@ -318,11 +361,11 @@ class BovedaApp {
       const user = window.vaultAuth.currentUser;
       const userId = user ? user.sub || user.email : 'local_user';
       const backupData = await window.vaultStorage.exportBackupData(userId);
-      
+
       const jsonStr = JSON.stringify(backupData, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
-      
+
       const today = new Date().toISOString().split('T')[0];
       const a = document.createElement('a');
       a.href = url;
@@ -331,7 +374,7 @@ class BovedaApp {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
+
       this.showToast(`Respaldo generado exitosamente (${backupData.total_documents} expedientes).`, 'success');
     } catch (err) {
       console.error('[BovedaApp] Error al exportar respaldo:', err);
@@ -383,6 +426,217 @@ class BovedaApp {
   }
 
   /**
+   * Dispara el diálogo nativo de instalación PWA (1 Toque)
+   */
+  async triggerPwaInstall() {
+    if (this.deferredInstallPrompt) {
+      this.deferredInstallPrompt.prompt();
+      const choice = await this.deferredInstallPrompt.userChoice;
+      if (choice && choice.outcome === 'accepted') {
+        this.showToast('¡Bóveda Digital instalada en tu dispositivo!', 'success');
+        const btn = document.getElementById('btn-pwa-install');
+        if (btn) {
+          btn.classList.add('hidden');
+          btn.classList.remove('inline-flex');
+        }
+      }
+      this.deferredInstallPrompt = null;
+    } else {
+      this.showToast('Para instalar con 1 toque: en el menú del navegador pulsa "Añadir a pantalla de inicio" o "Instalar aplicación".', 'info');
+    }
+  }
+
+  /**
+   * Abre el modal de Sincronización con Google Drive
+   */
+  openGoogleDriveModal() {
+    const modal = document.getElementById('modal-gdrive-sync');
+    if (!modal) return;
+    this.updateGoogleDriveUI();
+    const inputClient = document.getElementById('input-gdrive-client-id');
+    if (inputClient && window.vaultGoogleDrive) {
+      inputClient.value = window.vaultGoogleDrive.clientId || '';
+    }
+    modal.showModal();
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Actualiza los elementos visuales de Google Drive en el Navbar y Modal
+   * @param {'syncing' | 'synced' | 'error' | null} [overrideState]
+   */
+  updateGoogleDriveUI(overrideState = null) {
+    const gd = window.vaultGoogleDrive;
+    if (!gd) return;
+
+    const indicator = document.getElementById('indicator-gdrive-sync');
+    const badge = document.getElementById('gdrive-status-badge');
+    const led = document.getElementById('gdrive-status-led');
+    const statusText = document.getElementById('gdrive-status-text');
+    const labelConnect = document.getElementById('label-gdrive-connect');
+    const lastBackupText = document.getElementById('gdrive-last-backup-text');
+    const toggleAutoSync = document.getElementById('toggle-gdrive-autosync');
+
+    if (toggleAutoSync) {
+      toggleAutoSync.checked = Boolean(gd.autoSyncEnabled);
+    }
+
+    if (overrideState === 'syncing') {
+      if (indicator) {
+        indicator.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+        indicator.title = 'Google Drive: Respaldando automáticamente...';
+      }
+      if (badge) {
+        badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20';
+      }
+      if (led) led.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse';
+      if (statusText) statusText.textContent = 'Respaldando en Drive...';
+    } else if (overrideState === 'error') {
+      if (indicator) {
+        indicator.className = 'w-2 h-2 rounded-full bg-rose-400';
+        indicator.title = 'Google Drive: Error al sincronizar';
+      }
+      if (badge) {
+        badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20';
+      }
+      if (led) led.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+      if (statusText) statusText.textContent = 'Error de Respaldo';
+    } else if (gd.isConnected) {
+      if (indicator) {
+        indicator.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        indicator.title = gd.autoSyncEnabled ? 'Google Drive: Conectado (Auto-Sync activo)' : 'Google Drive: Conectado (Manual)';
+      }
+      if (badge) {
+        badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+      }
+      if (led) led.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      if (statusText) statusText.textContent = gd.autoSyncEnabled ? 'Conectado (Auto-Sync)' : 'Conectado';
+      if (labelConnect) labelConnect.textContent = 'Desconectar de Google Drive';
+    } else {
+      if (indicator) {
+        indicator.className = 'w-2 h-2 rounded-full bg-slate-400';
+        indicator.title = 'Google Drive: Desconectado';
+      }
+      if (badge) {
+        badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-white/10';
+      }
+      if (led) led.className = 'w-1.5 h-1.5 rounded-full bg-slate-400';
+      if (statusText) statusText.textContent = 'Desconectado';
+      if (labelConnect) labelConnect.textContent = 'Conectar con Google Drive';
+    }
+
+    if (lastBackupText) {
+      if (gd.lastBackupTime) {
+        const d = new Date(gd.lastBackupTime);
+        lastBackupText.textContent = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      } else {
+        lastBackupText.textContent = 'Ninguno registrado';
+      }
+    }
+
+    if (window.lucide) {
+      setTimeout(() => window.lucide.createIcons(), 30);
+    }
+  }
+
+  /**
+   * Conecta o desconecta con Google Drive
+   */
+  async handleGoogleDriveConnect() {
+    const gd = window.vaultGoogleDrive;
+    if (!gd) return;
+
+    try {
+      if (gd.isConnected) {
+        await gd.disconnect();
+        this.updateGoogleDriveUI();
+        this.showToast('Google Drive desconectado.', 'info');
+      } else {
+        this.showToast('Conectando con Google Drive...', 'info');
+        await gd.connect();
+        this.updateGoogleDriveUI();
+        this.showToast('¡Conectado exitosamente con Google Drive!', 'success');
+      }
+    } catch (err) {
+      console.error('[GoogleDrive] Error de conexión:', err);
+      this.showToast('Error al conectar con Google Drive: ' + err.message, 'danger');
+    }
+  }
+
+  /**
+   * Conmuta la sincronización automática con Google Drive
+   * @param {boolean} checked
+   */
+  async handleGoogleDriveToggleAutoSync(checked) {
+    if (window.vaultGoogleDrive) {
+      await window.vaultGoogleDrive.setAutoSync(checked);
+      this.updateGoogleDriveUI();
+      this.showToast(checked ? 'Sincronización automática con Drive activada.' : 'Sincronización automática con Drive desactivada.', 'info');
+    }
+  }
+
+  /**
+   * Guarda el Client ID de Google OAuth ingresado por el usuario
+   */
+  async saveGoogleDriveClientId() {
+    const input = document.getElementById('input-gdrive-client-id');
+    const clientId = input ? input.value : '';
+    if (window.vaultGoogleDrive) {
+      await window.vaultGoogleDrive.setClientId(clientId);
+      this.showToast('Client ID de Google Drive guardado correctamente.', 'success');
+    }
+  }
+
+  /**
+   * Sube el respaldo cifrado a Google Drive
+   */
+  async handleGoogleDriveUpload() {
+    const gd = window.vaultGoogleDrive;
+    if (!gd) return;
+    const user = window.vaultAuth.currentUser;
+    const userId = user ? user.sub || user.email : 'local_user';
+
+    try {
+      this.showToast('Cifrando y subiendo respaldo a Google Drive...', 'info');
+      const res = await gd.uploadBackup(userId);
+      this.updateGoogleDriveUI();
+      this.showToast(`Respaldo cifrado subido a Google Drive exitosamente (${res.docsCount} expedientes).`, 'success');
+    } catch (err) {
+      console.error('[GoogleDrive] Error al subir:', err);
+      this.showToast('Error al subir a Google Drive: ' + err.message, 'danger');
+    }
+  }
+
+  /**
+   * Descarga y restaura el respaldo cifrado desde Google Drive
+   */
+  async handleGoogleDriveDownload() {
+    const gd = window.vaultGoogleDrive;
+    if (!gd) return;
+    const user = window.vaultAuth.currentUser;
+    const userId = user ? user.sub || user.email : 'local_user';
+
+    try {
+      this.showToast('Descargando respaldo cifrado desde Google Drive...', 'info');
+      const res = await gd.downloadAndRestore(userId);
+      this.updateGoogleDriveUI();
+
+      // Recargar gavetas y expedientes en memoria
+      const customDrawers = await window.vaultStorage.getSetting(`customDrawers_${userId}`) || {};
+      this.categories = { ...this.defaultCategories, ...customDrawers };
+      this.updateCategoryDropdowns();
+      await this.loadAndRenderDocuments();
+
+      this.showToast(`Restauración desde Google Drive exitosa: ${res.mergedCount} expedientes procesados.`, 'success');
+      const modal = document.getElementById('modal-gdrive-sync');
+      if (modal) modal.close();
+    } catch (err) {
+      console.error('[GoogleDrive] Error al descargar de Drive:', err);
+      this.showToast('Error al restaurar desde Google Drive: ' + err.message, 'danger');
+    }
+  }
+
+  /**
    * Renderiza el Mueble Gavetero Inteligente con sus gavetas coloreadas y sus carpetas interiores
    */
   renderCabinet() {
@@ -396,7 +650,7 @@ class BovedaApp {
     // Si el usuario está buscando, abrir automáticamente gavetas con coincidencias
     if (q) {
       Object.keys(this.categories).forEach(catKey => {
-        const hasMatch = this.unlockedDocuments.some(d => 
+        const hasMatch = this.unlockedDocuments.some(d =>
           d.category === catKey && (
             (d.title && d.title.toLowerCase().includes(q)) ||
             (d.doc_number && d.doc_number.toLowerCase().includes(q)) ||
@@ -422,7 +676,7 @@ class BovedaApp {
       const cat = this.categories[catKey];
       if (!cat) return '';
       const allCategoryDocs = this.unlockedDocuments.filter(d => d.category === catKey);
-      
+
       // Filtrar por buscador
       let visibleDocs = allCategoryDocs;
       if (q) {
@@ -535,18 +789,18 @@ class BovedaApp {
                     </button>
                   </div>
                 ` : visibleDocs.map(doc => {
-                  let statusBadge = '<span class="badge-status badge-valid"><i data-lucide="check-circle" class="w-3 h-3"></i> Vigente</span>';
-                  if (doc.expiry_date) {
-                    const exp = new Date(doc.expiry_date);
-                    if (exp < now) {
-                      statusBadge = '<span class="badge-status badge-expired"><i data-lucide="alert-octagon" class="w-3 h-3"></i> Vencido</span>';
-                    } else if (exp <= thirtyDays) {
-                      const daysLeft = Math.ceil((exp - now) / 86400000);
-                      statusBadge = `<span class="badge-status badge-warning"><i data-lucide="clock" class="w-3 h-3"></i> Vence en ${daysLeft}d</span>`;
-                    }
-                  }
+        let statusBadge = '<span class="badge-status badge-valid"><i data-lucide="check-circle" class="w-3 h-3"></i> Vigente</span>';
+        if (doc.expiry_date) {
+          const exp = new Date(doc.expiry_date);
+          if (exp < now) {
+            statusBadge = '<span class="badge-status badge-expired"><i data-lucide="alert-octagon" class="w-3 h-3"></i> Vencido</span>';
+          } else if (exp <= thirtyDays) {
+            const daysLeft = Math.ceil((exp - now) / 86400000);
+            statusBadge = `<span class="badge-status badge-warning"><i data-lucide="clock" class="w-3 h-3"></i> Vence en ${daysLeft}d</span>`;
+          }
+        }
 
-                  return `
+        return `
                     <div class="folder-card p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 group" onclick="window.bovedaApp.openDocumentDetail('${doc.id}')">
                       <div>
                         <div class="flex items-center gap-2 mb-1">
@@ -584,7 +838,7 @@ class BovedaApp {
                       </div>
                     </div>
                   `;
-                }).join('')}
+      }).join('')}
               </div>
             </div>
           </div>
@@ -753,6 +1007,7 @@ class BovedaApp {
 
       document.getElementById('modal-new-drawer').close();
       await window.vaultStorage.logAuditEvent(user.sub, 'DRAWER_CREATED', { drawerId, label, color });
+      window.vaultGoogleDrive?.triggerAutoSync(user.sub, 'drawer_created');
     } catch (err) {
       console.error(err);
       this.showToast('Error al guardar la nueva gaveta.', 'danger');
@@ -795,6 +1050,7 @@ class BovedaApp {
       this.renderCabinet();
       this.showToast(`Gaveta "${cat.label}" desinstalada del archivador.`, 'info');
       await window.vaultStorage.logAuditEvent(user.sub, 'DRAWER_DELETED', { drawerKey });
+      window.vaultGoogleDrive?.triggerAutoSync(user.sub, 'drawer_deleted');
     } catch (err) {
       console.error(err);
       this.showToast('Error al desinstalar la gaveta.', 'danger');
@@ -862,7 +1118,9 @@ class BovedaApp {
 
     this.showToast('Documento cifrado y archivado en la gaveta con éxito', 'success');
     document.getElementById('modal-new-doc').close();
-    await this.loadAndRenderDocuments();
+    await this.loadAndRenderDocuments(true);
+    this.syncWithCloud(true);
+    window.vaultGoogleDrive?.triggerAutoSync(window.vaultAuth.currentUser.sub, 'doc_created');
   }
 
   /**
@@ -1049,7 +1307,7 @@ class BovedaApp {
     const docNum = doc.doc_number || '000000000';
     const rawCleanNum = docNum.replace(/[^A-Z0-9]/gi, '').toUpperCase() || '000000000';
     const mrzNum = rawCleanNum.padEnd(9, '<').slice(0, 9);
-    
+
     // Líneas MRZ tipo estándar OCR-B (40 caracteres por línea)
     const mrzLine1 = `IDUTO${mrzNum}${'<'.repeat(26)}`;
     const mrzLine2 = `8501017M3212318UTO${'<'.repeat(21)}4`;
@@ -1383,9 +1641,11 @@ class BovedaApp {
     await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_MODIFIED', { docId: updatedRecord.id });
 
     this.showToast('Documento modificado y re-cifrado con éxito.', 'success');
-    
+
     // Recargar datos y refrescar la vista de detalle
-    await this.loadAndRenderDocuments();
+    await this.loadAndRenderDocuments(true);
+    this.syncWithCloud(true);
+    window.vaultGoogleDrive?.triggerAutoSync(window.vaultAuth.currentUser.sub, 'doc_modified');
     await this.openDocumentDetail(this.selectedDoc.id);
   }
 
@@ -1439,12 +1699,23 @@ class BovedaApp {
     if (!this.selectedDoc) return;
     if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente el documento "${this.selectedDoc.title}" de tu bóveda? Esta acción no se puede deshacer.`)) return;
 
-    await window.vaultStorage.deleteDocument(this.selectedDoc.id);
-    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_DELETED', { docId: this.selectedDoc.id });
-    
+    const docId = this.selectedDoc.id;
+    await window.vaultStorage.deleteDocument(docId);
+    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_DELETED', { docId });
+
+    // Eliminar también en la nube si hay sesión activa
+    if (window.vaultAuth.accessToken) {
+      fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${docId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
+      }).catch(() => { });
+    }
+
     document.getElementById('modal-doc-detail').close();
     this.showToast('Documento eliminado de la gaveta.', 'success');
-    await this.loadAndRenderDocuments();
+    await this.loadAndRenderDocuments(true);
+    this.syncWithCloud(true);
+    window.vaultGoogleDrive?.triggerAutoSync(window.vaultAuth.currentUser.sub, 'doc_deleted');
   }
 
   /**
@@ -1455,7 +1726,8 @@ class BovedaApp {
     const modal = document.getElementById('modal-share-doc');
     const linkInput = document.getElementById('share-generated-link');
     const token = Math.random().toString(36).substr(2, 12);
-    linkInput.value = `${window.location.origin}/#share=${token}`;
+    const baseUrl = window.location.href.split('#')[0].split('?')[0];
+    linkInput.value = `${baseUrl}#share=${token}`;
     modal.showModal();
     if (window.lucide) window.lucide.createIcons();
   }
@@ -1587,7 +1859,7 @@ class BovedaApp {
 
     setTimeout(() => {
       if (statusText) statusText.textContent = '¡Lectura completada con éxito!';
-      
+
       // Auto-completar campos de ejemplo leídos por OCR
       const docNumInput = document.getElementById('input-doc-number');
       const issuerInput = document.getElementById('input-issuer');
@@ -1595,7 +1867,7 @@ class BovedaApp {
 
       if (docNumInput) docNumInput.value = 'PAS-' + Math.floor(10000000 + Math.random() * 90000000);
       if (issuerInput) issuerInput.value = 'Registro Civil / Cancillería';
-      
+
       const futureDate = new Date();
       futureDate.setFullYear(futureDate.getFullYear() + 5);
       if (expiryInput) expiryInput.value = futureDate.toISOString().split('T')[0];
@@ -1650,10 +1922,150 @@ class BovedaApp {
   }
 
   escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/[&<>'"]/g, 
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>'"]/g,
       tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
     );
+  }
+
+  /**
+   * Actualiza el indicador visual de estado de sincronización con la Nube
+   * @param {'synced' | 'syncing' | 'offline' | 'error'} state
+   * @param {string} message
+   */
+  updateCloudSyncUI(state, message = '') {
+    const indicator = document.getElementById('indicator-cloud-sync');
+    const icon = document.getElementById('icon-cloud-sync');
+    const label = document.getElementById('label-cloud-sync');
+    const statusText = document.getElementById('cloud-status-text');
+    const btn = document.getElementById('btn-cloud-sync');
+
+    if (btn && message) {
+      btn.title = `Nube: ${message} (Clic para sincronizar)`;
+    }
+
+    if (state === 'syncing') {
+      if (indicator) indicator.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+      if (icon) {
+        icon.setAttribute('data-lucide', 'refresh-cw');
+        icon.setAttribute('class', 'w-4 h-4 animate-spin text-amber-400');
+      }
+      if (label) label.textContent = 'Sincronizando';
+      if (statusText) {
+        statusText.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span> Sincronizando con Servidor...';
+      }
+    } else if (state === 'synced') {
+      if (indicator) indicator.className = 'w-2 h-2 rounded-full bg-emerald-400';
+      if (icon) {
+        icon.setAttribute('data-lucide', 'cloud-check');
+        icon.setAttribute('class', 'w-4 h-4 text-emerald-400');
+      }
+      if (label) label.textContent = 'Nube';
+      if (statusText) {
+        statusText.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Conectada y Protegida';
+      }
+    } else if (state === 'offline') {
+      if (indicator) indicator.className = 'w-2 h-2 rounded-full bg-slate-400';
+      if (icon) {
+        icon.setAttribute('data-lucide', 'cloud-off');
+        icon.setAttribute('class', 'w-4 h-4 text-slate-400');
+      }
+      if (label) label.textContent = 'Offline';
+      if (statusText) {
+        statusText.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Modo Local / Offline';
+      }
+    } else if (state === 'error') {
+      if (indicator) indicator.className = 'w-2 h-2 rounded-full bg-rose-400';
+      if (icon) {
+        icon.setAttribute('data-lucide', 'cloud');
+        icon.setAttribute('class', 'w-4 h-4 text-rose-400');
+      }
+      if (label) label.textContent = 'Error Nube';
+      if (statusText) {
+        statusText.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Desconectado';
+      }
+    }
+
+    if (window.lucide) {
+      setTimeout(() => window.lucide.createIcons(), 50);
+    }
+  }
+
+  /**
+   * Sincronización bidireccional Zero-Knowledge con el Servidor / Google Cloud
+   * @param {boolean} silent
+   */
+  async syncWithCloud(silent = false) {
+    const user = window.vaultAuth.currentUser;
+    if (!user) return;
+
+    this.updateCloudSyncUI('syncing', 'Sincronizando...');
+
+    const isLive = await window.vaultAuth.checkServerConnection();
+    if (!isLive) {
+      this.updateCloudSyncUI('offline', 'Modo Local / Offline');
+      if (!silent) {
+        this.showToast('Servidor no disponible. Los datos continúan protegidos localmente en tu dispositivo.', 'info');
+      }
+      return;
+    }
+
+    const token = window.vaultAuth.accessToken;
+    const apiBase = window.vaultAuth.apiBaseUrl;
+
+    try {
+      // 1. Obtener todos los documentos locales de IndexedDB
+      const localDocs = await window.vaultStorage.getAllDocuments(user.sub);
+
+      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados)
+      if (token) {
+        const syncRes = await fetch(`${apiBase}/api/v1/documents/batch-sync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ documents: localDocs })
+        });
+
+        if (syncRes.ok) {
+          for (const d of localDocs) {
+            await window.vaultStorage.markDocumentSynced(d.id, true);
+          }
+        }
+
+        // 3. Descargar documentos existentes en la Nube
+        const getRes = await fetch(`${apiBase}/api/v1/documents`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (getRes.ok) {
+          const cloudData = await getRes.json();
+          if (Array.isArray(cloudData.documents)) {
+            await window.vaultStorage.mergeCloudDocuments(cloudData.documents);
+          }
+        }
+      }
+
+      this.updateCloudSyncUI('synced', 'Nube Sincronizada y Protegida');
+      if (!silent) {
+        this.showToast('Bóveda sincronizada exitosamente con la Nube.', 'success');
+      }
+
+      // Refrescar documentos descifrados en pantalla si la bóveda está desbloqueada
+      if (window.vaultAuth.masterKey) {
+        await this.loadAndRenderDocuments(true); // true = no disparar sync recursivo
+      }
+    } catch (err) {
+      console.warn('[BovedaApp] Error durante sincronización Cloud:', err);
+      this.updateCloudSyncUI('error', 'Error al sincronizar');
+      if (!silent) {
+        this.showToast('Error al conectar con la Nube. Se mantuvieron los datos locales.', 'danger');
+      }
+    }
   }
 
   bindEvents() {
@@ -1707,6 +2119,34 @@ class BovedaApp {
       });
     }
 
+    // Soporte nativo de teclado accesible para PIN pad y pantallas de seguridad
+    window.addEventListener('keydown', (e) => {
+      const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+      const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+
+      if (this.activeView === 'pin-lock') {
+        if (e.key >= '0' && e.key <= '9') {
+          e.preventDefault();
+          this.handlePinKey(e.key);
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          this.handlePinBackspace();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (this.currentPinInput.length >= 4) {
+            this.submitPinUnlock();
+          }
+        }
+      } else if (this.activeView === 'pin-setup') {
+        if (!isInputFocused && e.key >= '0' && e.key <= '9') {
+          const pin1 = document.getElementById('input-new-pin');
+          if (pin1) {
+            pin1.focus();
+          }
+        }
+      }
+    });
+
     // Formulario de Guardado de Documento
     const newDocForm = document.getElementById('form-new-doc');
     if (newDocForm) {
@@ -1735,3 +2175,26 @@ window.addEventListener('DOMContentLoaded', () => {
   window.bovedaApp = new BovedaApp();
   window.bovedaApp.init();
 });
+
+// Registro de Service Worker para PWA (Acceso Offline y Arranque a 1 Toque)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then((reg) => {
+        console.log('[Boveda PWA] Service Worker registrado con éxito:', reg.scope);
+        if ('SyncManager' in window && reg.sync) {
+          reg.sync.register('cloud-sync').catch(() => {});
+        }
+      })
+      .catch((err) => {
+        console.warn('[Boveda PWA] Aviso: Service Worker no registrado (modo local/preview):', err.message);
+      });
+  });
+
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'SYNC_REQUEST') {
+      window.bovedaApp?.syncWithCloud(true);
+    }
+  });
+}
+

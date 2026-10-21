@@ -109,6 +109,40 @@ class VaultStorage {
   }
 
   /**
+   * Actualiza el estado de sincronización de un documento
+   * @param {string} id
+   * @param {boolean} isSynced
+   */
+  async markDocumentSynced(id, isSynced = true) {
+    const doc = await this.getDocument(id);
+    if (doc) {
+      doc.is_synced = isSynced;
+      await this.saveDocument(doc);
+    }
+    return doc;
+  }
+
+  /**
+   * Fusiona documentos descargados de la nube en IndexedDB
+   * @param {Array} cloudDocs
+   */
+  async mergeCloudDocuments(cloudDocs = []) {
+    let mergedCount = 0;
+    for (const doc of cloudDocs) {
+      if (!doc || !doc.id) continue;
+      const existing = await this.getDocument(doc.id);
+      if (!existing || new Date(doc.updated_at || 0) >= new Date(existing.updated_at || 0)) {
+        await this.saveDocument({
+          ...doc,
+          is_synced: true
+        });
+        mergedCount++;
+      }
+    }
+    return mergedCount;
+  }
+
+  /**
    * Elimina un documento por ID
    * @param {string} id 
    */
@@ -139,6 +173,15 @@ class VaultStorage {
       request.onsuccess = () => resolve(true);
       request.onerror = (e) => reject(e.target.error);
     });
+  }
+
+  /**
+   * Guarda una configuración en 'settings' (alias de compatibilidad con setSetting)
+   * @param {string} key 
+   * @param {any} value 
+   */
+  async saveSetting(key, value) {
+    return this.setSetting(key, value);
   }
 
   /**
@@ -177,7 +220,6 @@ class VaultStorage {
   }
 
   /**
-  /**
    * Genera el objeto de respaldo completo con documentos cifrados y gavetas personalizadas
    * @param {string} userId 
    * @returns {Promise<object>}
@@ -213,7 +255,7 @@ class VaultStorage {
     if (backupData.customDrawers && typeof backupData.customDrawers === 'object') {
       const currentDrawers = await this.getSetting(`customDrawers_${userId}`) || {};
       const mergedDrawers = { ...currentDrawers, ...backupData.customDrawers };
-      await this.saveSetting(`customDrawers_${userId}`, mergedDrawers);
+      await this.setSetting(`customDrawers_${userId}`, mergedDrawers);
     }
 
     await this.logAuditEvent(userId, 'VAULT_RESTORED', {

@@ -9,13 +9,32 @@
 
 class VaultAuth {
   constructor() {
-    this.apiBaseUrl = localStorage.getItem('boveda_api_base_url') || 'https://api.ecosistema.com';
-    this.isDemoMode = localStorage.getItem('boveda_demo_mode') !== 'false'; // Predeterminado en demo para probar de inmediato
+    let defaultBaseUrl = 'https://api.ecosistema.com';
+    if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+      defaultBaseUrl = window.location.origin;
+    }
+    this.apiBaseUrl = localStorage.getItem('boveda_api_base_url') || defaultBaseUrl;
+    this.isDemoMode = localStorage.getItem('boveda_demo_mode') === 'true'; // False por defecto para conectar con backend disponible
     this.currentUser = null;
     this.accessToken = null;
     this.refreshToken = null;
     this.masterKey = null; // Clave AES-GCM derivada en memoria
     this.salt = null;
+  }
+
+  /**
+   * Comprueba si el servidor backend REST está activo y responde
+   */
+  async checkServerConnection() {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`${this.apiBaseUrl}/api/health`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -38,86 +57,85 @@ class VaultAuth {
   }
 
   /**
-   * Inicia sesión contra el backend de Halterofilia / Ecosistema
+   * Inicia sesión contra el backend (Cloud First con contingencia Offline)
    * @param {string} email 
    * @param {string} password 
    */
   async login(email, password) {
-    if (this.isDemoMode) {
-      // Simulación de respuesta idéntica al Backend real de Halterofilia
-      await new Promise(r => setTimeout(r, 600));
+    const isLive = !this.isDemoMode && await this.checkServerConnection();
+    if (isLive) {
+      try {
+        const response = await fetch(`${this.apiBaseUrl}/api/v1/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, app: 'boveda_digital' })
+        });
 
-      const mockPayload = {
-        sub: 'usr_' + Math.random().toString(36).substr(2, 9),
-        email: email.trim().toLowerCase(),
-        full_name: email.split('@')[0].toUpperCase(),
-        roles: ['user'],
-        apps: ['halterofilia', 'boveda_digital'],
-        subscription: {
-          plan: email.includes('pro') ? 'pro' : 'free',
-          status: 'active',
-          max_docs: email.includes('pro') ? -1 : 5,
-          cloud_sync_enabled: email.includes('pro'),
-          expires_at: new Date(Date.now() + 30 * 86400000).toISOString()
+        if (response.ok) {
+          const data = await response.json();
+          this.accessToken = data.accessToken || data.access_token;
+          this.refreshToken = data.refreshToken || data.refresh_token;
+          this.currentUser = data.user;
+          
+          let salt = data.user.crypto_salt;
+          if (!salt) {
+            salt = await window.vaultStorage.getSetting('userSalt_' + data.user.email) || window.vaultCrypto.generateRandomSalt(16);
+          }
+          this.salt = salt;
+
+          await window.vaultStorage.setSetting('currentUser', this.currentUser);
+          await window.vaultStorage.setSetting('accessToken', this.accessToken);
+          await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
+          await window.vaultStorage.setSetting('userSalt', this.salt);
+
+          await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'cloud' });
+          return { success: true, user: this.currentUser, requiresPinSetup: !(await this.hasConfiguredPin()) };
+        } else {
+          const err = await response.json().catch(() => ({}));
+          console.warn('[VaultAuth] Error retornado por servidor central:', err.error || err.message);
         }
-      };
-
-      this.accessToken = this._generateMockJwt(mockPayload);
-      this.refreshToken = 'rft_' + Math.random().toString(36).substr(2, 16);
-      this.currentUser = mockPayload;
-      
-      // Obtener o generar Salt criptográfico para la derivación local de la clave
-      let existingSalt = await window.vaultStorage.getSetting('userSalt_' + mockPayload.email);
-      if (!existingSalt) {
-        existingSalt = window.vaultCrypto.generateRandomSalt(16);
-        await window.vaultStorage.setSetting('userSalt_' + mockPayload.email, existingSalt);
+      } catch (e) {
+        console.warn('[VaultAuth] Servidor inalcanzable, activando contingencia local:', e.message);
       }
-      this.salt = existingSalt;
-
-      // Persistir sesión segura
-      await window.vaultStorage.setSetting('currentUser', this.currentUser);
-      await window.vaultStorage.setSetting('accessToken', this.accessToken);
-      await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
-      await window.vaultStorage.setSetting('userSalt', this.salt);
-
-      await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email });
-      return { success: true, user: this.currentUser, requiresPinSetup: !(await this.hasConfiguredPin()) };
     }
 
-    // Flujo HTTP Real contra Backend REST
-    try {
-      const response = await fetch(`${this.apiBaseUrl}/api/v1/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, app: 'boveda_digital' })
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.message || 'Credenciales inválidas en el servidor.');
+    // Modo local / offline de contingencia inmediata
+    await new Promise(r => setTimeout(r, 300));
+    const mockPayload = {
+      sub: 'usr_' + Math.random().toString(36).substr(2, 9),
+      email: email.trim().toLowerCase(),
+      full_name: email.split('@')[0].toUpperCase(),
+      roles: ['user'],
+      apps: ['halterofilia', 'boveda_digital'],
+      subscription: {
+        plan: email.includes('pro') ? 'pro' : 'free',
+        status: 'active',
+        max_docs: email.includes('pro') ? -1 : 5,
+        cloud_sync_enabled: email.includes('pro'),
+        expires_at: new Date(Date.now() + 30 * 86400000).toISOString()
       }
+    };
 
-      const data = await response.json();
-      this.accessToken = data.access_token;
-      this.refreshToken = data.refresh_token;
-      this.currentUser = data.user;
-      
-      let salt = data.user.crypto_salt;
-      if (!salt) {
-        salt = await window.vaultStorage.getSetting('userSalt_' + data.user.email) || window.vaultCrypto.generateRandomSalt(16);
-      }
-      this.salt = salt;
-
-      await window.vaultStorage.setSetting('currentUser', this.currentUser);
-      await window.vaultStorage.setSetting('accessToken', this.accessToken);
-      await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
-      await window.vaultStorage.setSetting('userSalt', this.salt);
-
-      return { success: true, user: this.currentUser, requiresPinSetup: !(await this.hasConfiguredPin()) };
-    } catch (e) {
-      console.error('[VaultAuth] Error en login:', e);
-      return { success: false, error: e.message };
+    this.accessToken = this._generateMockJwt(mockPayload);
+    this.refreshToken = 'rft_' + Math.random().toString(36).substr(2, 16);
+    this.currentUser = mockPayload;
+    
+    // Obtener o generar Salt criptográfico para la derivación local de la clave
+    let existingSalt = await window.vaultStorage.getSetting('userSalt_' + mockPayload.email);
+    if (!existingSalt) {
+      existingSalt = window.vaultCrypto.generateRandomSalt(16);
+      await window.vaultStorage.setSetting('userSalt_' + mockPayload.email, existingSalt);
     }
+    this.salt = existingSalt;
+
+    // Persistir sesión segura
+    await window.vaultStorage.setSetting('currentUser', this.currentUser);
+    await window.vaultStorage.setSetting('accessToken', this.accessToken);
+    await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
+    await window.vaultStorage.setSetting('userSalt', this.salt);
+
+    await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'local' });
+    return { success: true, user: this.currentUser, requiresPinSetup: !(await this.hasConfiguredPin()) };
   }
 
   /**

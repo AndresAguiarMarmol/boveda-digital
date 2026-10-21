@@ -19,7 +19,14 @@ const crypto = require('node:crypto');
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'boveda_digital_secret_key_halterofilia_2026';
 
-// Base de datos en memoria para el servidor
+function hashPassword(pwd) {
+  return crypto.createHash('sha256').update(pwd).digest('hex');
+}
+
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DATA_FILE = process.env.DATA_FILE || path.join(DATA_DIR, 'vault_cloud.json');
+
+// Base de datos para el servidor (con persistencia a disco)
 const db = {
   users: [
     {
@@ -41,9 +48,48 @@ const db = {
   shares: new Map()     // key: token, value: payload efímero
 };
 
-function hashPassword(pwd) {
-  return crypto.createHash('sha256').update(pwd).digest('hex');
+function saveDB() {
+  if (process.env.NO_DISK_PERSIST === 'true') return;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const serialized = {
+      users: db.users,
+      documents: Object.fromEntries(db.documents),
+      shares: Object.fromEntries(db.shares)
+    };
+    fs.writeFileSync(DATA_FILE, JSON.stringify(serialized, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[Server Cloud Persistence] Error al guardar en disco:', err.message);
+  }
 }
+
+function loadDB() {
+  if (process.env.NO_DISK_PERSIST === 'true') return;
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const content = fs.readFileSync(DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed.users) && parsed.users.length > 0) {
+        db.users = parsed.users;
+      }
+      if (parsed.documents) {
+        db.documents = new Map(Object.entries(parsed.documents));
+      }
+      if (parsed.shares) {
+        db.shares = new Map(Object.entries(parsed.shares));
+      }
+    } else {
+      saveDB();
+    }
+  } catch (err) {
+    console.warn('[Server Cloud Persistence] Error al cargar desde disco:', err.message);
+  }
+}
+
+// Inicializar persistencia
+loadDB();
 
 function base64UrlEncode(str) {
   return Buffer.from(str).toString('base64url');
@@ -241,7 +287,9 @@ const server = http.createServer(async (req, res) => {
 
         return sendJSON(res, 200, {
           accessToken,
+          access_token: accessToken,
           refreshToken,
+          refresh_token: refreshToken,
           user: claims
         });
       }
@@ -268,6 +316,7 @@ const server = http.createServer(async (req, res) => {
           plan: 'free'
         };
         db.users.push(newUser);
+        saveDB();
 
         const claims = {
           sub: newUser.id,
@@ -289,7 +338,9 @@ const server = http.createServer(async (req, res) => {
 
         return sendJSON(res, 201, {
           accessToken,
+          access_token: accessToken,
           refreshToken,
+          refresh_token: refreshToken,
           user: claims
         });
       }
@@ -313,7 +364,7 @@ const server = http.createServer(async (req, res) => {
           apps: ['halterofilia', 'boveda_digital']
         }, 3600);
 
-        return sendJSON(res, 200, { accessToken: refreshedToken });
+        return sendJSON(res, 200, { accessToken: refreshedToken, access_token: refreshedToken });
       }
 
       // 4. GET /api/v1/share/:token (Consultar enlace temporal compartido - Público)
@@ -325,6 +376,7 @@ const server = http.createServer(async (req, res) => {
         }
         if (new Date(share.expires_at) < new Date()) {
           db.shares.delete(token);
+          saveDB();
           return sendJSON(res, 410, { error: 'El enlace temporal ha expirado' });
         }
         return sendJSON(res, 200, {
@@ -359,6 +411,7 @@ const server = http.createServer(async (req, res) => {
         const userObj = db.users.find(u => u.id === authUser.sub);
         if (userObj) {
           userObj.plan = 'pro';
+          saveDB();
         }
         return sendJSON(res, 200, {
           success: true,
@@ -401,6 +454,7 @@ const server = http.createServer(async (req, res) => {
 
         userDocs.push(newDoc);
         db.documents.set(authUser.sub, userDocs);
+        saveDB();
 
         return sendJSON(res, 201, { document: newDoc });
       }
@@ -422,10 +476,27 @@ const server = http.createServer(async (req, res) => {
         });
 
         db.documents.set(authUser.sub, userDocs);
+        saveDB();
         return sendJSON(res, 200, { syncedCount: documents.length, status: 'synced' });
       }
 
-      // 10. POST /api/v1/share/create (Generar enlace temporal seguro)
+      // 10. DELETE /api/v1/documents/:id (Eliminar documento cifrado en nube)
+      if (pathname.startsWith('/api/v1/documents/') && req.method === 'DELETE') {
+        const docId = pathname.replace('/api/v1/documents/', '').trim();
+        let userDocs = db.documents.get(authUser.sub) || [];
+        const initialLen = userDocs.length;
+        userDocs = userDocs.filter(d => d.id !== docId);
+
+        if (userDocs.length === initialLen) {
+          return sendJSON(res, 404, { error: 'Documento no encontrado o no pertenece al usuario' });
+        }
+
+        db.documents.set(authUser.sub, userDocs);
+        saveDB();
+        return sendJSON(res, 200, { success: true, id: docId, message: 'Documento eliminado de la nube exitosamente' });
+      }
+
+      // 11. POST /api/v1/share/create (Generar enlace temporal seguro)
       if (pathname === '/api/v1/share/create' && req.method === 'POST') {
         const body = await parseJSONBody(req);
         const token = crypto.randomBytes(16).toString('hex');
@@ -437,6 +508,7 @@ const server = http.createServer(async (req, res) => {
           expires_at: new Date(Date.now() + (body.durationHours || 24) * 3600000).toISOString()
         };
         db.shares.set(token, shareRecord);
+        saveDB();
         return sendJSON(res, 201, {
           shareToken: token,
           shareUrl: `/share/${token}`,
@@ -471,6 +543,9 @@ if (require.main === module) {
 module.exports = {
   server,
   db,
+  saveDB,
+  loadDB,
+  DATA_FILE,
   generateJWT,
   verifyJWT,
   hashPassword

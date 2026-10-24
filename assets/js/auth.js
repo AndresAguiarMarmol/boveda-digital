@@ -52,6 +52,12 @@ class VaultAuth {
       this.accessToken = savedToken;
       this.refreshToken = savedRefreshToken;
       this.salt = userSalt;
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          const sessPin = sessionStorage.getItem('_vault_session_pin');
+          if (sessPin) this.lastEnteredPin = sessPin;
+        }
+      } catch(e) {}
       return { status: 'LOCKED', user: this.currentUser };
     }
     return { status: 'UNAUTHENTICATED' };
@@ -183,6 +189,9 @@ class VaultAuth {
     // Derivar la clave maestra AES-256
     this.masterKey = await window.vaultCrypto.deriveKeyFromPin(pin, this.salt);
     this.lastEnteredPin = pin;
+    try {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('_vault_session_pin', pin);
+    } catch(e) {}
     await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'PIN_SETUP_COMPLETED');
     return true;
   }
@@ -220,6 +229,9 @@ class VaultAuth {
     // Derivar y retener la clave maestra AES-256 en memoria volátil
     this.masterKey = await window.vaultCrypto.deriveKeyFromPin(pin, this.salt);
     this.lastEnteredPin = pin;
+    try {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('_vault_session_pin', pin);
+    } catch(e) {}
     await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'VAULT_UNLOCKED');
     return true;
   }
@@ -238,6 +250,10 @@ class VaultAuth {
       const autoSavedPin = await window.vaultStorage.getSetting('vaultPinRawSecret_' + this.currentUser.email);
       if (autoSavedPin) {
         this.masterKey = await window.vaultCrypto.deriveKeyFromPin(autoSavedPin, this.salt);
+        this.lastEnteredPin = autoSavedPin;
+        try {
+          if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('_vault_session_pin', autoSavedPin);
+        } catch(e) {}
         await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'BIOMETRIC_UNLOCKED');
         return true;
       }
@@ -253,6 +269,9 @@ class VaultAuth {
   lockVault() {
     this.masterKey = null;
     this.lastEnteredPin = null;
+    try {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('_vault_session_pin');
+    } catch(e) {}
     return true;
   }
 
@@ -261,6 +280,9 @@ class VaultAuth {
    */
   async logout() {
     this.lockVault();
+    try {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('_vault_session_pin');
+    } catch(e) {}
     this.currentUser = null;
     this.accessToken = null;
     this.refreshToken = null;

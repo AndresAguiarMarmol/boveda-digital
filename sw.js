@@ -1,5 +1,5 @@
 // sw.js – en la raíz del proyecto
-const CACHE_NAME = 'boveda-digital-v1';
+const CACHE_NAME = 'boveda-digital-v3';
 const ASSETS = [
     './',
     './index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
     './assets/js/auth.js',
     './assets/js/crypto.js',
     './assets/js/storage.js',
+    './assets/js/license.js',
     './assets/js/gdrive.js',
     './assets/img/icon-192.png',
     './assets/img/icon-512.png'
@@ -28,19 +29,43 @@ self.addEventListener('install', e => {
     );
     self.skipWaiting();
 });
-// Activación
+// Activación – limpiar cachés obsoletos
 self.addEventListener('activate', e => {
-    e.waitUntil(caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ));
+    e.waitUntil(
+        caches.keys().then(keys =>
+            Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+        )
+    );
     self.clients.claim();
 });
-// Fetch – servir del caché, y si falta, ir a la red
+// Fetch – Estrategia Network-First con fallback a Cache para código de la app,
+// garantizando que los celulares reciban actualizaciones en cuanto estén conectados.
 self.addEventListener('fetch', e => {
     if (e.request.method !== 'GET') return;
-    e.respondWith(
-        caches.match(e.request).then(cached => cached || fetch(e.request))
-    );
+
+    // Solo interceptar peticiones HTTP/HTTPS del mismo origen o relativas
+    const url = new URL(e.request.url);
+    const isSameOrigin = url.origin === self.location.origin;
+
+    if (isSameOrigin) {
+        e.respondWith(
+            fetch(e.request)
+                .then(networkRes => {
+                    // Guardar copia fresca en caché para modo offline
+                    if (networkRes && networkRes.status === 200) {
+                        const copy = networkRes.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(e.request, copy));
+                    }
+                    return networkRes;
+                })
+                .catch(() => caches.match(e.request))
+        );
+    } else {
+        // Recursos de terceros (CDNs): Cache-First
+        e.respondWith(
+            caches.match(e.request).then(cached => cached || fetch(e.request))
+        );
+    }
 });
 // Background Sync – re intenta la sincronización cuando haya red
 self.addEventListener('sync', e => {

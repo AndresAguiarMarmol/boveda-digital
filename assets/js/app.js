@@ -106,6 +106,17 @@ class BovedaApp {
       this.switchView('auth');
     }
 
+    // Inicializar y evaluar licenciamiento offline y período de prueba (Spec 003)
+    if (window.vaultLicense) {
+      try {
+        await window.vaultLicense.init();
+        this.updateLicenseUI();
+        this.checkLicenseLock();
+      } catch (errLic) {
+        console.warn('[BovedaApp] Error al inicializar gestor de licencias:', errLic);
+      }
+    }
+
     // Inicializar iconos
     if (window.lucide) {
       window.lucide.createIcons();
@@ -145,6 +156,8 @@ class BovedaApp {
       if (pin2) pin2.value = '';
     } else if (viewName === 'dashboard') {
       this.renderDashboardHeader();
+      this.updateLicenseUI();
+      this.checkLicenseLock();
       this.loadAndRenderDocuments();
     }
 
@@ -217,24 +230,35 @@ class BovedaApp {
     let failedCount = 0;
     let reEncryptedCount = 0;
 
+    // Obtener PIN de sesión seguro (memoria volátil o sessionStorage)
+    let activePin = window.vaultAuth.lastEnteredPin;
+    if (!activePin) {
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          activePin = sessionStorage.getItem('_vault_session_pin');
+          if (activePin) window.vaultAuth.lastEnteredPin = activePin;
+        }
+      } catch(e) {}
+    }
+
     // Obtener sales candidatas para recuperación resiliente de expedientes históricos
     const candidateSalts = new Set([
       window.vaultAuth.salt,
       await window.vaultStorage.getSetting('last_imported_salt'),
       await window.vaultStorage.getSetting('backup_crypto_salt_' + user.sub),
       await window.vaultStorage.getSetting('userSalt_' + user.email),
-      'ae8713595fed1e759db1062454187513',
       '226000658459336d4184642799fc8498',
+      'ae8713595fed1e759db1062454187513',
       '5e1fc8e580b04dcd8d7a1a337d87b471',
       '4c11607d7f05ed75811057969f60880e'
     ]);
 
     const fallbackKeys = [];
-    if (window.vaultAuth.lastEnteredPin) {
+    if (activePin) {
       for (const s of candidateSalts) {
         if (s && s !== window.vaultAuth.salt) {
           try {
-            const k = await window.vaultCrypto.deriveKeyFromPin(window.vaultAuth.lastEnteredPin, s);
+            const k = await window.vaultCrypto.deriveKeyFromPin(activePin, s);
             fallbackKeys.push({ salt: s, key: k });
           } catch(e) {}
         }
@@ -242,6 +266,9 @@ class BovedaApp {
     }
 
     for (const raw of rawDocs) {
+      if (window.esPayloadCifradoValido && !window.esPayloadCifradoValido(raw)) {
+        continue;
+      }
       let decryptedPayload = null;
 
       // 1. Intentar descifrado con la clave maestra actual
@@ -427,7 +454,13 @@ class BovedaApp {
     try {
       const user = window.vaultAuth.currentUser;
       const userId = user ? user.sub || user.email : 'local_user';
-      const salt = window.vaultAuth?.salt || await window.vaultStorage.getSetting('userSalt') || 'ae8713595fed1e759db1062454187513';
+      // Priorizar la sal efectiva real con la que se cifran los documentos
+      const salt = await window.vaultStorage.getSetting(`userSalt_${userId}`) ||
+                   await window.vaultStorage.getSetting(`userSalt_${user?.email}`) ||
+                   await window.vaultStorage.getSetting('last_imported_salt') ||
+                   window.vaultAuth?.salt ||
+                   await window.vaultStorage.getSetting('userSalt') ||
+                   '226000658459336d4184642799fc8498';
       const pinHash = await window.vaultStorage.getSetting('vaultPinHash_' + (user?.email || 'default')) || '';
       const backupData = await window.vaultStorage.exportBackupData(userId, salt, pinHash);
 
@@ -477,15 +510,16 @@ class BovedaApp {
 
       // Si el archivo de respaldo contiene un crypto_salt y difiere del actual
       if (backupData.crypto_salt && window.vaultAuth.salt !== backupData.crypto_salt) {
-        if (window.vaultAuth.lastEnteredPin) {
+        const pinToDerive = window.vaultAuth.lastEnteredPin || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('_vault_session_pin') : null);
+        if (pinToDerive) {
           try {
-            const newKey = await window.vaultCrypto.deriveKeyFromPin(window.vaultAuth.lastEnteredPin, backupData.crypto_salt);
+            const newKey = await window.vaultCrypto.deriveKeyFromPin(pinToDerive, backupData.crypto_salt);
             window.vaultAuth.masterKey = newKey;
             window.vaultAuth.salt = backupData.crypto_salt;
             await window.vaultStorage.setSetting('userSalt', backupData.crypto_salt);
             if (user?.email) {
               await window.vaultStorage.setSetting('userSalt_' + user.email, backupData.crypto_salt);
-              const newHash = await window.vaultCrypto.sha256(window.vaultAuth.lastEnteredPin + ':' + backupData.crypto_salt);
+              const newHash = await window.vaultCrypto.sha256(pinToDerive + ':' + backupData.crypto_salt);
               await window.vaultStorage.setSetting('vaultPinHash_' + user.email, newHash);
             }
           } catch(errSalt) {
@@ -507,7 +541,12 @@ class BovedaApp {
       await this.loadAndRenderDocuments();
 
       const activeCount = this.unlockedDocuments ? this.unlockedDocuments.length : 0;
-      this.showToast(`Recuperación exitosa: ${result.restoredCount} expedientes restaurados (${activeCount} visibles en el archivador).`, 'success');
+      if (activeCount === 0 && result.restoredCount > 0) {
+        this.showToast(`Respaldo importado (${result.restoredCount} expedientes), pero requieren el PIN original para descifrarse.`, 'warning');
+        this.openBackupPinPrompt(backupData);
+      } else {
+        this.showToast(`Recuperación exitosa: ${activeCount} expedientes restaurados y listos en el archivador.`, 'success');
+      }
     } catch (err) {
       console.error('[BovedaApp] Error al importar respaldo:', err);
       this.showToast('Error en la recuperación: ' + err.message, 'danger');
@@ -716,9 +755,16 @@ class BovedaApp {
       this.updateCategoryDropdowns();
       await this.loadAndRenderDocuments();
 
-      this.showToast(`Restauración desde Google Drive exitosa: ${res.mergedCount} expedientes procesados.`, 'success');
+      const activeCount = this.unlockedDocuments ? this.unlockedDocuments.length : 0;
       const modal = document.getElementById('modal-gdrive-sync');
       if (modal) modal.close();
+
+      if (activeCount === 0 && res.mergedCount > 0) {
+        this.showToast(`Respaldo descargado (${res.mergedCount} expedientes), pero requieren el PIN original para descifrarse.`, 'warning');
+        this.openBackupPinPrompt(res.backupData);
+      } else {
+        this.showToast(`Restauración desde Google Drive exitosa: ${activeCount} expedientes restaurados y listos.`, 'success');
+      }
     } catch (err) {
       console.error('[GoogleDrive] Error al descargar de Drive:', err);
       this.showToast('Error al restaurar desde Google Drive: ' + err.message, 'danger');
@@ -2255,6 +2301,429 @@ class BovedaApp {
           this._currentObjectUrl = null;
         }
       });
+    }
+  }
+
+  /**
+   * Abre el modal interactivo de solicitud de PIN original del respaldo
+   * @param {Object} [backupData] Metadatos y documentos pendientes del respaldo
+   */
+  openBackupPinPrompt(backupData = null) {
+    this._pendingBackupData = backupData;
+    const modal = document.getElementById('modal-backup-pin-prompt');
+    if (!modal) return;
+    const input = document.getElementById('input-backup-pin');
+    const errEl = document.getElementById('backup-pin-error');
+    if (input) input.value = '';
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.classList.add('hidden');
+    }
+    if (typeof modal.showModal === 'function') {
+      modal.showModal();
+    } else {
+      modal.classList.remove('hidden');
+    }
+    if (input) {
+      setTimeout(() => input.focus(), 150);
+    }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Cierra el modal de solicitud de PIN del respaldo sin cambios
+   */
+  cancelBackupPinUnlock() {
+    this._pendingBackupData = null;
+    const modal = document.getElementById('modal-backup-pin-prompt');
+    if (modal) {
+      if (typeof modal.close === 'function') {
+        modal.close();
+      } else {
+        modal.classList.add('hidden');
+      }
+    }
+  }
+
+  /**
+   * Procesa el PIN ingresado por el usuario para descifrar y normalizar expedientes de respaldo
+   */
+  async submitBackupPinUnlock() {
+    const input = document.getElementById('input-backup-pin');
+    const errEl = document.getElementById('backup-pin-error');
+    const btn = document.getElementById('btn-submit-backup-pin');
+    const pin = input ? input.value.trim() : '';
+
+    if (!pin || pin.length < 4) {
+      if (errEl) {
+        errEl.textContent = 'Por favor ingresa el PIN del respaldo (mínimo 4 dígitos).';
+        errEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (errEl) errEl.classList.add('hidden');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>Descifrando...</span>';
+    }
+
+    try {
+      const user = window.vaultAuth.currentUser;
+      const userId = user ? user.sub || user.email : 'local_user';
+
+      // 1. Obtener candidatos de sal criptográfica
+      const candidateSalts = [
+        this._pendingBackupData?.crypto_salt,
+        '226000658459336d4184642799fc8498', // Sal histórica maestra de Bóveda
+        window.vaultAuth?.salt,
+        await window.vaultStorage.getSetting('userSalt'),
+        'ae8713595fed1e759db1062454187513'  // Sal por defecto de respaldo
+      ].filter(Boolean);
+
+      // Eliminar duplicados
+      const uniqueSalts = [...new Set(candidateSalts)];
+
+      // 2. Obtener documentos cifrados almacenados
+      let rawDocs = await window.vaultStorage.getAllDocuments(userId);
+      if ((!rawDocs || rawDocs.length === 0) && this._pendingBackupData?.documents) {
+        rawDocs = this._pendingBackupData.documents;
+      }
+
+      const validEncryptedDocs = rawDocs.filter(d => window.vaultStorage.esPayloadCifradoValido(d));
+
+      if (validEncryptedDocs.length === 0) {
+        throw new Error('No se encontraron expedientes cifrados válidos para restaurar.');
+      }
+
+      let decryptedResults = [];
+      let successfulSalt = null;
+      let recoveryKey = null;
+
+      // 3. Probar cada combinación de sal con el PIN ingresado
+      for (const salt of uniqueSalts) {
+        try {
+          const testKey = await window.vaultCrypto.deriveKeyFromPin(pin, salt);
+          const currentDecrypted = [];
+
+          for (const doc of validEncryptedDocs) {
+            try {
+              const plain = await window.vaultCrypto.decrypt(doc.encryptedPayload, testKey);
+              if (plain && (plain.title || plain.category || plain.documentType)) {
+                currentDecrypted.push({
+                  id: doc.id,
+                  originalDoc: doc,
+                  decryptedData: plain
+                });
+              }
+            } catch (e) {
+              // Falla silenciosa para probar siguiente documento
+            }
+          }
+
+          if (currentDecrypted.length > 0) {
+            decryptedResults = currentDecrypted;
+            successfulSalt = salt;
+            recoveryKey = testKey;
+            break;
+          }
+        } catch (deriveErr) {
+          console.warn('[BovedaApp] Error probando sal candidata:', deriveErr);
+        }
+      }
+
+      if (decryptedResults.length === 0) {
+        if (errEl) {
+          errEl.textContent = 'El PIN ingresado no coincide con el cifrado de los expedientes. Verifica los 6 dígitos.';
+          errEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      // 4. Re-cifrar con la clave maestra activa del dispositivo (o adoptar la clave si no existe)
+      let activeMasterKey = window.vaultAuth.masterKey;
+      if (!activeMasterKey) {
+        activeMasterKey = recoveryKey;
+        window.vaultAuth.masterKey = recoveryKey;
+        window.vaultAuth.salt = successfulSalt;
+        window.vaultAuth.lastEnteredPin = pin;
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('_vault_session_pin', pin);
+        }
+      }
+
+      // Re-cifrar y guardar cada documento en IndexedDB
+      for (const item of decryptedResults) {
+        const plain = item.decryptedData;
+        const payloadToEncrypt = {
+          title: plain.title || 'Documento Restaurado',
+          category: plain.category || 'general',
+          documentType: plain.documentType || 'otro',
+          documentNumber: plain.documentNumber || '',
+          expirationDate: plain.expirationDate || '',
+          notes: plain.notes || '',
+          fileData: plain.fileData || null,
+          fileName: plain.fileName || null,
+          fileMime: plain.fileMime || null,
+          createdAt: plain.createdAt || item.originalDoc.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        const reEncrypted = await window.vaultCrypto.encrypt(payloadToEncrypt, activeMasterKey);
+        await window.vaultStorage.saveDocument({
+          id: item.id,
+          userId: userId,
+          category: payloadToEncrypt.category,
+          expirationDate: payloadToEncrypt.expirationDate,
+          isArchived: item.originalDoc.isArchived || false,
+          syncStatus: 'synced',
+          encryptedPayload: reEncrypted,
+          updatedAt: payloadToEncrypt.updatedAt
+        });
+      }
+
+      // Registrar sal exitosa
+      await window.vaultStorage.setSetting('last_imported_salt', successfulSalt);
+      if (user?.email) {
+        await window.vaultStorage.setSetting('userSalt_' + user.email, window.vaultAuth.salt || successfulSalt);
+      }
+
+      // 5. Cerrar modal y re-renderizar interfaz
+      this.cancelBackupPinUnlock();
+      await this.loadAndRenderDocuments();
+
+      this.showToast(`¡Recuperación completada! ${decryptedResults.length} expedientes descifrados y listos en tu archivador.`, 'success');
+    } catch (err) {
+      console.error('[BovedaApp] Error en desbloqueo interactivo de respaldo:', err);
+      if (errEl) {
+        errEl.textContent = 'Error al descifrar: ' + err.message;
+        errEl.classList.remove('hidden');
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="unlock" class="w-4 h-4"></i><span>Descifrar</span>';
+        if (window.lucide) window.lucide.createIcons();
+      }
+    }
+  }
+
+  /**
+   * Actualiza el badge de estado de licencia o período de prueba en la interfaz (Spec 003)
+   */
+  updateLicenseUI() {
+    if (!window.vaultLicense) return;
+    const user = window.vaultAuth?.currentUser;
+    const lic = window.vaultLicense.getEstadoLicencia(user?.email);
+
+    const badge = document.getElementById('badge-license-status');
+    const icon = document.getElementById('icon-license-badge');
+    const text = document.getElementById('text-license-badge');
+    if (!badge || !text) return;
+
+    badge.className = 'badge-status cursor-pointer text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 transition-all';
+
+    if (lic.isLicensed) {
+      badge.classList.add('bg-emerald-500/10', 'text-emerald-400', 'border', 'border-emerald-500/20');
+      badge.title = 'Licencia Oficial Activa (100% Offline)';
+      if (icon) icon.setAttribute('data-lucide', 'shield-check');
+      text.textContent = 'Licencia Activa';
+    } else if (lic.isTrialActive) {
+      if (lic.trialDaysRemaining <= 2) {
+        badge.classList.add('bg-amber-500/10', 'text-amber-400', 'border', 'border-amber-500/30', 'animate-pulse');
+        badge.title = `Período de prueba por vencer: ${lic.trialDaysRemaining} día(s) restante(s)`;
+      } else {
+        badge.classList.add('bg-cyan-500/10', 'text-cyan-400', 'border', 'border-cyan-500/20');
+        badge.title = `Período de prueba activo: ${lic.trialDaysRemaining} días restantes`;
+      }
+      if (icon) icon.setAttribute('data-lucide', 'clock');
+      text.textContent = `Trial: ${lic.trialDaysRemaining}d`;
+    } else {
+      badge.classList.add('bg-rose-500/10', 'text-rose-400', 'border', 'border-rose-500/30');
+      badge.title = 'Período de prueba de 7 días expirado. Requiere activación.';
+      if (icon) icon.setAttribute('data-lucide', 'shield-alert');
+      text.textContent = 'Trial Expirado';
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Comprueba si el período de prueba expiró sin licencia y superpone el bloqueo no eludible
+   */
+  checkLicenseLock() {
+    if (!window.vaultLicense) return;
+    const user = window.vaultAuth?.currentUser;
+    const lic = window.vaultLicense.getEstadoLicencia(user?.email);
+
+    const lockModal = document.getElementById('modal-trial-lock');
+    if (!lockModal) return;
+
+    if (lic.isExpired && !lic.isLicensed) {
+      const devEl = document.getElementById('lock-device-id');
+      const emailEl = document.getElementById('lock-user-email-display');
+      const cadEl = document.getElementById('lock-cadena-solicitud');
+      const errEl = document.getElementById('lock-activation-error');
+
+      if (devEl) devEl.textContent = lic.deviceId;
+      if (emailEl) emailEl.textContent = lic.email;
+      if (cadEl) cadEl.value = lic.cadenaSolicitud;
+      if (errEl) {
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+      }
+
+      if (typeof lockModal.showModal === 'function' && !lockModal.open) {
+        lockModal.showModal();
+      }
+      if (window.lucide) window.lucide.createIcons();
+    } else {
+      if (lockModal.open) {
+        lockModal.close();
+      }
+    }
+  }
+
+  /**
+   * Abre el modal informativo de licencia para consultar días o ingresar token preventivamente
+   */
+  openLicenseModal() {
+    if (!window.vaultLicense) return;
+    const user = window.vaultAuth?.currentUser;
+    const lic = window.vaultLicense.getEstadoLicencia(user?.email);
+
+    const modal = document.getElementById('modal-license-info');
+    if (!modal) return;
+
+    const statusBadge = document.getElementById('info-license-status-badge');
+    const timeLeft = document.getElementById('info-license-time-left');
+    const devId = document.getElementById('info-device-id');
+    const cadena = document.getElementById('info-cadena-solicitud');
+    const inputToken = document.getElementById('input-activation-token-info');
+    const errEl = document.getElementById('info-activation-error');
+
+    if (statusBadge) {
+      statusBadge.textContent = lic.isLicensed ? 'Licencia Offline Activa' : (lic.isTrialActive ? 'Período de Prueba (7 Días)' : 'Trial Expirado');
+      statusBadge.className = lic.isLicensed ?
+        'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+        (lic.isTrialActive ? 'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
+          'px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20');
+    }
+
+    if (timeLeft) {
+      if (lic.isLicensed) {
+        timeLeft.textContent = lic.licenseData?.isPerpetual ? 'Perpetua / Ilimitada' : (lic.licenseData?.expirationDate || 'Activa');
+      } else if (lic.isTrialActive) {
+        timeLeft.textContent = `${lic.trialDaysRemaining} día(s) restante(s)`;
+      } else {
+        timeLeft.textContent = 'Expirado (0 días)';
+      }
+    }
+
+    if (devId) devId.textContent = lic.deviceId;
+    if (cadena) cadena.value = lic.cadenaSolicitud;
+    if (inputToken) inputToken.value = '';
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.classList.add('hidden');
+    }
+
+    if (typeof modal.showModal === 'function') {
+      modal.showModal();
+    }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Copia la cadena de solicitud al portapapeles
+   * @param {'lock'|'info'} origin
+   */
+  async copyLicenseRequestString(origin = 'info') {
+    const input = document.getElementById(`${origin}-cadena-solicitud`);
+    const val = input ? input.value : '';
+    if (!val) return;
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(val);
+      } else if (input) {
+        input.select();
+        document.execCommand('copy');
+      }
+      this.showToast('Código de solicitud copiado al portapapeles.', 'success');
+    } catch (e) {
+      this.showToast(`Código: ${val}`, 'info');
+    }
+  }
+
+  /**
+   * Abre enlace directo a WhatsApp para solicitar token
+   * @param {'lock'|'info'} origin
+   */
+  openWhatsAppSupport(origin = 'info') {
+    if (!window.vaultLicense) return;
+    const user = window.vaultAuth?.currentUser;
+    const lic = window.vaultLicense.getEstadoLicencia(user?.email);
+    if (lic.whatsAppUrl) {
+      window.open(lic.whatsAppUrl, '_blank');
+    }
+  }
+
+  /**
+   * Procesa la activación de licencia mediante token ingresado
+   * @param {'lock'|'info'} origin
+   */
+  async submitLicenseActivation(origin = 'lock') {
+    const input = document.getElementById(`input-activation-token-${origin}`);
+    const errEl = document.getElementById(`${origin}-activation-error`);
+    const btn = document.getElementById(`btn-submit-${origin}-activation`);
+    const token = input ? input.value.trim() : '';
+
+    if (!token) {
+      if (errEl) {
+        errEl.textContent = 'Por favor pega el Token de Activación recibido.';
+        errEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (btn) btn.disabled = true;
+
+    try {
+      const user = window.vaultAuth?.currentUser;
+      const res = await window.vaultLicense.activarConToken(token, user?.email);
+
+      if (!res.success) {
+        if (errEl) {
+          errEl.textContent = res.message;
+          errEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      if (errEl) errEl.classList.add('hidden');
+      if (input) input.value = '';
+
+      // Cerrar modales de bloqueo o información
+      const modal = document.getElementById(`modal-${origin === 'lock' ? 'trial-lock' : 'license-info'}`);
+      if (modal && modal.open) {
+        modal.close();
+      }
+
+      const lockModal = document.getElementById('modal-trial-lock');
+      if (lockModal && lockModal.open) {
+        lockModal.close();
+      }
+
+      this.updateLicenseUI();
+      this.showToast('¡Licencia verificada y activada con éxito! Acceso completo habilitado.', 'success');
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = 'Error al validar token: ' + err.message;
+        errEl.classList.remove('hidden');
+      }
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 }

@@ -34,7 +34,8 @@ const db = {
       email: 'andres.pro@boveda.com',
       passwordHash: hashPassword('PasswordSeguro123!'),
       fullName: 'Andrés Aguiar (PRO)',
-      plan: 'pro'
+      plan: 'pro',
+      cryptoSalt: '226000658459336d4184642799fc8498'
     },
     {
       id: 'usr_free_002',

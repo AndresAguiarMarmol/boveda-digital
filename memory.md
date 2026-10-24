@@ -29,6 +29,10 @@ Registro de todo lo que debe preservarse entre sesiones de trabajo: arquitectura
   - `gdrive_client_id` / `gdrive_last_backup`: Configuración y marca temporal del último respaldo cifrado en Google Drive.
   - `gdrive_token` / `gdrive_token_expiry`: Token de acceso efímero para operaciones con la Google Drive API (scope `drive.file`).
   - `gdrive_auto_sync`: Booleano de activación de la sincronización automática en segundo plano (debounced 1.5s).
+  - `vault_device_id`: Identificador persistente y único del dispositivo (`dev_<uuid>`).
+  - `vault_trial_start`: Marca temporal en ms del primer arranque de la app para computar los 7 días de prueba.
+  - `vault_license_token`: Token de activación Base64 verificado criptográficamente con `"Halterofilia-SuperSecret-Salt-2026"`.
+  - `vault_license_data`: Metadatos de la licencia activa (`deviceId`, `email`, `exp`, `isPerpetual`).
 
 - **Almacén `audit_log` (KeyPath: `id` auto-incremental):**
   - Registro de eventos (`LOGIN_SUCCESS`, `VAULT_UNLOCKED`, `DOC_CREATED`, `DOC_VIEWED`, `DOC_DELETED`, etc.).
@@ -62,10 +66,20 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 - **Cifrado Zero-Knowledge y Web Crypto API:** El backend centralizado nunca recibe las claves maestras ni los documentos en texto claro. La clave simétrica de 256 bits se deriva exclusivamente en el cliente mediante PBKDF2 (100,000 iteraciones, SHA-256) a partir del PIN maestro del usuario y un salt criptográfico.
 - **Preservación y Portabilidad del Salt Criptográfico en Respaldos (`crypto_salt`):** Para garantizar que un respaldo JSON exportado en un dispositivo (PC) pueda ser importado y descifrado de forma transparente en otro dispositivo (teléfono celular), el archivo de respaldo exporta de manera pública y estandarizada el `crypto_salt` y el `pin_hash` de verificación. El módulo de descifrado en cliente implementa recuperación multi-salt automática que prueba claves secundarias/históricas con el PIN en memoria y re-cifra transparentemente los expedientes descifrados con la clave maestra activa actual.
+- **Asistente Interactivo de PIN de Respaldo y Re-Cifrado en Caliente:** Cuando un respaldo proviene de otro dispositivo protegido con un PIN maestro diferente o cuando no se pueden descifrar los expedientes de inmediato, el sistema despliega el diálogo accesible `#modal-backup-pin-prompt`. Al ingresar el PIN original del respaldo, el cliente prueba las sales candidatas, descifra los expedientes legítimos, los re-cifra inmediatamente con la clave maestra activa del dispositivo receptor y los guarda en `IndexedDB`, garantizando Zero-Knowledge absoluto y acceso instantáneo sin reiniciar la bóveda.
+- **Aislamiento de Entorno de Pruebas y Sanitización de Payloads:** Las pruebas automatizadas operan con `process.env.NO_DISK_PERSIST = 'true'`, evitando la contaminación de `data/vault_cloud.json`. Todos los métodos de importación, sincronización y serialización utilizan `esPayloadCifradoValido(doc)` para descartar registros corruptos o placeholders de tests, preservando exclusivamente documentos con payloads AES-256-GCM auténticos.
+- **Sistema de Licenciamiento y Seguridad Offline (Spec 003 / AGENTS.md 4.1):**
+  - *Período de Prueba (Trial):* 7 días continuos (`TRIAL_DAYS = 7`, `604,800,000 ms`) desde la primera apertura del dispositivo.
+  - *Device ID Único:* Generado de forma persistente (`dev_<uuid>`) y almacenado con persistencia dual (`IndexedDB` + `localStorage`).
+  - *Cadena de Solicitud:* `REQ|<DeviceID>|<correo>` con botones de copia rápida y contacto directo vía WhatsApp a `+56933395447`.
+  - *Token de Activación:* Cadena Base64 con payload estructurado `{ deviceId, email, exp, signature }`.
+  - *Firma Criptográfica SHA-256:* Computada de forma canónica sobre `${deviceId}:${email}:${exp}:${salt}` con sal fija `"Halterofilia-SuperSecret-Salt-2026"`, validable 100% offline mediante Web Crypto API (`crypto.subtle`).
+  - *Bloqueo Estricto No Eludible:* Al expirar los 7 días sin licencia activa, el overlay `#modal-trial-lock` bloquea la interacción con la aplicación impidiendo eludir la pantalla hasta ingresar un token válido.
+- **Service Worker v3 con Estrategia Network-First para Código Local:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v3'`, incorporando `license.js` a los recursos esenciales precacheados.
 - **Acceso 100% Offline:** Toda la información cifrada reside en `IndexedDB`, permitiendo consultar y crear documentos sin conexión a internet.
 - **Sincronización Cloud Bidireccional y Despliegue en Google Cloud Run:** La aplicación cuenta con sincronización bidireccional automática y manual (`batch-sync`, descarga remota y eliminación sincronizada `DELETE /api/v1/documents/:id`). Detecta automáticamente el origen del servidor, actualiza el indicador de estado en la UI (🟢 Sincronizado, 🟡 Sincronizando, ⚪ Offline) y se distribuye con `Dockerfile` nativo optimizado para despliegue en Google Cloud Run.
 - **Compatibilidad con Backend Existente (Halterofilia):** Utiliza autenticación REST sobre HTTPS con tokens JWT / OAuth2, refresh tokens rotativos y sesiones administradas en servidor.
-- **Modelo de Licenciamiento:**
+- **Modelo de Licenciamiento de Planes:**
   - *Plan Gratuito:* Limitado a un máximo de 5 documentos y almacenamiento local.
   - *Plan PRO:* Almacenamiento ilimitado, alertas de vencimiento, copias de seguridad cifradas en la nube y exportación avanzada.
 - **Metáfora Visual de Mueble Gavetero (Filing Cabinet) Cromático y Extensible:** La organización de documentos se estructura en un archivador blindado donde cada gaveta cuenta con una identidad cromática única (LED, reflejo de tirador, bordes, riel y credencial visual). El sistema incluye 5 gavetas base (`identidad` Cyan, `vehiculos` Esmeralda, `finanzas` Ámbar, `residencia` Púrpura, `salud` Rosa) y permite al usuario crear gavetas personalizadas con nuevos conceptos, selector de color HSL/Hex y selector de iconos Lucide, con persistencia offline en `IndexedDB`. Los documentos cuentan con soporte completo de ciclo de vida: lectura descifrada, impresión limpia (`window.print()`), modificación con re-cifrado AES-256-GCM y eliminación.
@@ -77,7 +91,40 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
-### 2026-10-24 — Corrección de Restauración de Respaldo Multi-Dispositivo y Preservación de Salt Criptográfico
+### 2026-10-24 — Spec 003: Sistema de Licenciamiento y Seguridad Offline (Trial 7 Días y Activación Criptográfica SHA-256)
+- **Implementación del Módulo Criptográfico de Licencias (`assets/js/license.js`):**
+  - Implementadas funciones puras `generarCadenaSolicitud(deviceId, email)`, `computarFirmaLicencia(deviceId, email, exp, salt)`, `generarTokenLicencia(...)` y `validarTokenLicencia(...)`.
+  - Implementada la clase `VaultLicenseManager` con persistencia dual (`IndexedDB` + `localStorage`) para resguardar el `Device ID`, la fecha de inicio del trial y los tokens activados ante limpiezas de caché.
+  - Firma canónica basada en SHA-256 con sal fija `"Halterofilia-SuperSecret-Salt-2026"`, 100% verificable sin internet.
+- **Componentes Visuales y Bloqueo No Eludible (`index.html`, `assets/js/app.js`):**
+  - Diseñado el diálogo `#modal-trial-lock` no eludible (evita escape y clics externos) que se dispara automáticamente cuando `(Date.now() - trial_start) >= 7 días` sin activación.
+  - Exhibición destacada del contacto `+56933395447` y la cadena `REQ|<DeviceID>|<correo>` con enlace dinámico hacia WhatsApp.
+  - Añadido diálogo informativo y de activación proactiva `#modal-license-info`.
+  - Incorporado badge interactivo `#badge-license-status` en el navbar del Dashboard que muestra los días de prueba restantes o el estado activo de la licencia.
+- **Actualización de Service Worker (`sw.js`):**
+  - Añadido `license.js` a los assets y actualizado `CACHE_NAME` a `'boveda-digital-v3'`.
+- **Suite de Pruebas Unitarias Automatizadas:**
+  - 43 de 43 pruebas pasando 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
+
+### 2026-10-24 — Spec 002: Solución Integral de Restauración Multi-Dispositivo (PC ↔ Celular), Asistente de PIN de Respaldo y Service Worker v2
+- **Causa Raíz Identificada y Resuelta:**
+  - El mensaje *"Recuperación exitosa: 28 expedientes"* se debía a que `tests/server.test.js` no aislaba la persistencia en disco, inyectando 24 registros de prueba dummy (`'U2FsdGVkX1+payload...'`) en `data/vault_cloud.json` que se exportaban en los respaldos.
+  - El teléfono celular no mostraba los documentos porque los 5 documentos legítimos fueron cifrados con salt `'226000658459336d4184642799fc8498'`, mientras que `sw.js` en el celular mantenía la versión `v1` en caché (Cache-First) sin el código de descifrado multi-salt y sin asistente para ingresar el PIN de origen.
+- **Aislamiento y Depuración de Datos (`tests/server.test.js`, `data/vault_cloud.json`, `server.js`):**
+  - Configurado `process.env.NO_DISK_PERSIST = 'true'` en `tests/server.test.js` para evitar contaminación en ejecuciones de pruebas.
+  - Depurado `data/vault_cloud.json` eliminando los 24 registros espurios y preservando intactos los 5 expedientes reales del usuario `usr_pro_001` con el salt efectivo `'226000658459336d4184642799fc8498'`.
+- **Sanitización Robusta de Payloads (`assets/js/storage.js`):**
+  - Implementada función `esPayloadCifradoValido(doc)` para descartar strings dummy o corruptos en `serializarBackupBoveda`, `importBackupData`, `fusionarDocumentosBackup` y `mergeCloudDocuments`.
+  - Exportación de la sal efectiva real en `exportBackupData`.
+- **Persistencia de PIN de Sesión (`assets/js/auth.js`):**
+  - Almacenamiento temporal en `sessionStorage` (`_vault_session_pin`) durante `setupPin`, `unlockWithPin` y `unlockWithBiometrics`. Recuperación en `init()` para tolerar recargas en navegadores móviles, y purga inmediata en `lockVault()` y `logout()`.
+- **Asistente Interactivo de PIN de Respaldo (`index.html`, `assets/js/app.js`):**
+  - Añadido modal accesible `#modal-backup-pin-prompt` con teclado numérico, estilo glassmorphism y botón de descifrado.
+  - Implementados métodos `openBackupPinPrompt()`, `cancelBackupPinUnlock()` y `submitBackupPinUnlock()` en `BovedaApp`. Si un respaldo importado no puede descifrarse de inmediato, el asistente solicita el PIN del respaldo, prueba las sales candidatas, descifra los expedientes reales, los re-cifra en caliente con la clave activa del celular y los guarda en `IndexedDB`.
+- **Renovación del Service Worker a v2 (`sw.js`):**
+  - Actualizado `CACHE_NAME` a `'boveda-digital-v2'` para invalidar la caché vieja en celulares.
+  - Implementada estrategia *Network-First* con fallback a Cache para scripts y recursos del mismo origen, asegurando que los dispositivos móviles siempre reciban las últimas versiones.
+- **Suite de Pruebas Automatizadas:** 38/38 tests pasando 100% en verde (`node --test tests/boveda.test.js tests/server.test.js`).
 - **Preservación de Salt en Archivos de Respaldo (`storage.js`, `app.js`, `gdrive.js`):**
   - Incorporado `crypto_salt` y `pin_hash` dentro de la cabecera del JSON generado por `serializarBackupBoveda()` y `exportBackupData()`.
   - Permite a cualquier dispositivo receptor (como teléfonos celulares) conocer el salt con el que fueron cifrados los expedientes para derivar la misma clave maestra simétrica a partir del PIN.

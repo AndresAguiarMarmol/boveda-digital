@@ -1,3 +1,4 @@
+process.env.NO_DISK_PERSIST = 'true';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');

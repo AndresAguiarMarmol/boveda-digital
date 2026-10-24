@@ -315,7 +315,8 @@ class VaultGoogleDrive {
     return {
       success: true,
       mergedCount: result.totalDocs || result.restoredCount || 0,
-      timestamp: backupData.metadata?.exported_at || backupData.exported_at
+      timestamp: backupData.metadata?.exported_at || backupData.exported_at,
+      backupData
     };
   }
 

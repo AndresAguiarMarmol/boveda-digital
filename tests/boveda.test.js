@@ -584,5 +584,209 @@ test('Google Drive Sync (Zero-Knowledge): gdrive.js, modales y validación cript
   assert.ok(validacion.valido, 'El paquete serializado para Google Drive debe ser válido');
 });
 
+// =============================================================================
+// PRUEBAS DE RESTAURACIÓN MULTI-DISPOSITIVO (SDD 002)
+// =============================================================================
+
+test('SDD 002: esPayloadCifradoValido descarta registros espurios y acepta datos reales', () => {
+  const { esPayloadCifradoValido } = require('../assets/js/storage.js');
+
+  // Caso 1: Descartar mocks de tests con 'payload...'
+  const mockSpurio = {
+    id: 'doc_mock_1',
+    category: 'general',
+    encrypted_payload: 'U2FsdGVkX1+payload...test123456789'
+  };
+  assert.equal(esPayloadCifradoValido(mockSpurio), false, 'Debe descartar placeholders que incluyan "payload..."');
+
+  // Caso 2: Descartar nulos o cadenas vacías
+  assert.equal(esPayloadCifradoValido(null), false);
+  assert.equal(esPayloadCifradoValido({ id: 'doc_null' }), false);
+
+  // Caso 3: Aceptar expedientes cifrados reales en Base64
+  const docReal = {
+    id: 'doc_huzcvq2ff',
+    category: 'legal',
+    encrypted_payload: 'h9+Mv5yJkO1a+l5h7F9z0Bq2...'
+  };
+  assert.equal(esPayloadCifradoValido(docReal), true, 'Debe aceptar expedientes cifrados válidos');
+});
+
+test('SDD 002: Service Worker v2, diálogo de PIN y manejadores en app.js e index.html', () => {
+  const rootDir = path.join(__dirname, '..');
+
+  // 1. sw.js debe ser v2 o v3
+  const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3"), 'sw.js debe definir CACHE_NAME v2 o v3 para forzar actualización en celulares');
+
+  // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
+  const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  assert.ok(htmlContent.includes('id="modal-backup-pin-prompt"'), 'index.html debe contener el modal de PIN de respaldo');
+  assert.ok(htmlContent.includes('id="input-backup-pin"'), 'index.html debe contener el input para el PIN');
+  assert.ok(htmlContent.includes('submitBackupPinUnlock()'), 'index.html debe enlazar submitBackupPinUnlock()');
+  assert.ok(htmlContent.includes('cancelBackupPinUnlock()'), 'index.html debe enlazar cancelBackupPinUnlock()');
+
+  // 3. app.js debe contener los métodos del asistente
+  const appContent = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  assert.ok(appContent.includes('openBackupPinPrompt'), 'app.js debe implementar openBackupPinPrompt');
+  assert.ok(appContent.includes('cancelBackupPinUnlock'), 'app.js debe implementar cancelBackupPinUnlock');
+  assert.ok(appContent.includes('submitBackupPinUnlock'), 'app.js debe implementar submitBackupPinUnlock');
+  assert.ok(appContent.includes('226000658459336d4184642799fc8498'), 'app.js debe incluir la sal histórica maestra de Bóveda');
+});
+
+// =============================================================================
+// PRUEBAS DE LICENCIAMIENTO OFFLINE Y TRIAL DE 7 DÍAS (SPEC 003 / AGENTS.MD 4.1)
+// =============================================================================
+
+const {
+  TRIAL_DAYS,
+  TRIAL_DURATION_MS,
+  LICENSE_SALT,
+  CONTACT_PHONE,
+  generarCadenaSolicitud,
+  computarFirmaLicencia,
+  generarTokenLicencia,
+  validarTokenLicencia,
+  VaultLicenseManager
+} = require('../assets/js/license.js');
+
+test('SDD 003: Constantes maestras, formato de solicitud REQ|<DeviceID>|<correo> y teléfono de contacto', () => {
+  assert.equal(TRIAL_DAYS, 7, 'El período de prueba debe ser estrictamente de 7 días');
+  assert.equal(TRIAL_DURATION_MS, 604800000, 'TRIAL_DURATION_MS debe ser 604,800,000 ms');
+  assert.equal(LICENSE_SALT, "Halterofilia-SuperSecret-Salt-2026", 'La sal de firma debe ser Halterofilia-SuperSecret-Salt-2026');
+  assert.equal(CONTACT_PHONE, "+56933395447", 'El teléfono de contacto debe ser +56933395447');
+
+  const cadena = generarCadenaSolicitud('dev_9b1deb4d', 'andres.pro@boveda.com');
+  assert.equal(cadena, 'REQ|dev_9b1deb4d|andres.pro@boveda.com', 'La cadena debe tener el formato estricto REQ|<DeviceID>|<correo>');
+});
+
+test('SDD 003: Firma SHA-256 canónica y emisión/validación de Token Base64 offline', async () => {
+  const deviceId = 'dev_test_device_001';
+  const email = 'cliente@empresa.cl';
+  const exp = 1893456000000; // 2030
+
+  // 1. Verificación de firma SHA-256 determinista
+  const firma = await computarFirmaLicencia(deviceId, email, exp);
+  assert.equal(typeof firma, 'string');
+  assert.equal(firma.length, 64, 'El hash SHA-256 debe tener 64 caracteres hexadecimales');
+
+  // 2. Emisión de Token de Activación con 30 días de vigencia
+  const token30d = await generarTokenLicencia(deviceId, email, 30);
+  assert.ok(typeof token30d === 'string' && token30d.length > 20, 'El token debe ser una cadena Base64 no vacía');
+
+  // 3. Validación de Token Offline para el dispositivo autorizado
+  const resultado = await validarTokenLicencia(token30d, deviceId);
+  assert.equal(resultado.valido, true, 'El token debe ser validado con éxito');
+  assert.equal(resultado.payload.deviceId, deviceId);
+  assert.equal(resultado.payload.email, email);
+  assert.equal(resultado.payload.isPerpetual, false);
+  assert.ok(resultado.payload.exp > Date.now());
+
+  // 4. Token Vitalicio / Perpetuo (exp = -1)
+  const tokenPerpetuo = await generarTokenLicencia(deviceId, email, -1);
+  const resPerpetuo = await validarTokenLicencia(tokenPerpetuo, deviceId);
+  assert.equal(resPerpetuo.valido, true);
+  assert.equal(resPerpetuo.payload.exp, -1);
+  assert.equal(resPerpetuo.payload.isPerpetual, true);
+});
+
+test('SDD 003: Rechazo estricto de tokens manipulados, apócrifos o de otro dispositivo', async () => {
+  const deviceReal = 'dev_dispositivo_real';
+  const deviceOtro = 'dev_dispositivo_ajeno';
+  const email = 'usuario@boveda.com';
+
+  const tokenOriginal = await generarTokenLicencia(deviceReal, email, 90);
+
+  // Caso 1: Intentar activar en un dispositivo diferente (Device ID discordante)
+  const resOtroDev = await validarTokenLicencia(tokenOriginal, deviceOtro);
+  assert.equal(resOtroDev.valido, false);
+  assert.ok(resOtroDev.error.includes('Token emitido para otro dispositivo'));
+
+  // Caso 2: Firma apócrifa (manipulación del payload o sal ajena)
+  const payloadFalso = {
+    deviceId: deviceReal,
+    email: email,
+    exp: Date.now() + 100000000,
+    signature: '0000000000000000000000000000000000000000000000000000000000000000'
+  };
+  const tokenFalso = Buffer.from(JSON.stringify(payloadFalso)).toString('base64');
+  const resFalso = await validarTokenLicencia(tokenFalso, deviceReal);
+  assert.equal(resFalso.valido, false);
+  assert.ok(resFalso.error.includes('Firma criptográfica inválida'));
+
+  // Caso 3: Token expirado en el tiempo
+  const payloadExpirado = {
+    deviceId: deviceReal,
+    email: email,
+    exp: Date.now() - 50000, // En el pasado
+    signature: await computarFirmaLicencia(deviceReal, email, Date.now() - 50000)
+  };
+  const tokenExpirado = Buffer.from(JSON.stringify(payloadExpirado)).toString('base64');
+  const resExpirado = await validarTokenLicencia(tokenExpirado, deviceReal);
+  assert.equal(resExpirado.valido, false);
+  assert.ok(resExpirado.error.includes('expiró'));
+});
+
+test('SDD 003: VaultLicenseManager: Período de 7 días activo y transición a bloqueo al expirar', async () => {
+  const manager = new VaultLicenseManager();
+  manager.deviceId = 'dev_test_suite_001';
+
+  // Caso 1: Trial recién iniciado (0 días transcurridos) -> Quedan 7 días
+  manager.trialStartDate = Date.now();
+  manager.isLicensed = false;
+  let estado = manager.getEstadoLicencia('test@boveda.com');
+  assert.equal(estado.isTrialActive, true);
+  assert.equal(estado.isExpired, false);
+  assert.equal(estado.trialDaysRemaining, 7);
+
+  // Caso 2: Trial con 5 días transcurridos -> Quedan 2 días (alerta preventiva)
+  manager.trialStartDate = Date.now() - (5 * 24 * 60 * 60 * 1000);
+  estado = manager.getEstadoLicencia('test@boveda.com');
+  assert.equal(estado.isTrialActive, true);
+  assert.equal(estado.isExpired, false);
+  assert.equal(estado.trialDaysRemaining, 2);
+
+  // Caso 3: Trial con 8 días transcurridos -> Expirado (Bloqueo no eludible)
+  manager.trialStartDate = Date.now() - (8 * 24 * 60 * 60 * 1000);
+  estado = manager.getEstadoLicencia('test@boveda.com');
+  assert.equal(estado.isTrialActive, false);
+  assert.equal(estado.isExpired, true);
+  assert.equal(estado.trialDaysRemaining, 0);
+
+  // Caso 4: Activación con token válido -> Pasa a Licenciado
+  const tokenValido = await generarTokenLicencia('dev_test_suite_001', 'test@boveda.com', 365);
+  const activacion = await manager.activarConToken(tokenValido, 'test@boveda.com');
+  assert.equal(activacion.success, true);
+  assert.equal(manager.isLicensed, true);
+
+  estado = manager.getEstadoLicencia('test@boveda.com');
+  assert.equal(estado.isLicensed, true);
+  assert.equal(estado.isExpired, false);
+});
+
+test('SDD 003: Componentes de UI en index.html, app.js y sw.js para Spec 003', () => {
+  const rootDir = path.join(__dirname, '..');
+
+  // 1. Validar index.html
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  assert.ok(html.includes('id="modal-trial-lock"'), 'index.html debe contener el modal de bloqueo modal-trial-lock');
+  assert.ok(html.includes('id="modal-license-info"'), 'index.html debe contener el modal modal-license-info');
+  assert.ok(html.includes('id="badge-license-status"'), 'index.html debe contener badge-license-status');
+  assert.ok(html.includes('+56933395447'), 'index.html debe exhibir el teléfono de soporte +56933395447');
+  assert.ok(html.includes('assets/js/license.js'), 'index.html debe cargar license.js');
+
+  // 2. Validar app.js
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  assert.ok(appJs.includes('updateLicenseUI'), 'app.js debe implementar updateLicenseUI');
+  assert.ok(appJs.includes('checkLicenseLock'), 'app.js debe implementar checkLicenseLock');
+  assert.ok(appJs.includes('openLicenseModal'), 'app.js debe implementar openLicenseModal');
+  assert.ok(appJs.includes('copyLicenseRequestString'), 'app.js debe implementar copyLicenseRequestString');
+  assert.ok(appJs.includes('submitLicenseActivation'), 'app.js debe implementar submitLicenseActivation');
+
+  // 3. Validar sw.js
+  const sw = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+  assert.ok(sw.includes('./assets/js/license.js'), 'sw.js debe cachear license.js');
+});
+
 
 

@@ -34,14 +34,15 @@ function generarCadenaSolicitud(deviceId, email) {
  * Concatenación canónica: "${deviceId}:${email}:${exp}:${salt}"
  * @param {string} deviceId 
  * @param {string} email 
- * @param {number} exp Timestamp de expiración o -1 para licencia perpetua
+ * @param {number|string} exp Timestamp de expiración o -1 para licencia perpetua
  * @param {string} [salt] Sal maestra
  * @returns {Promise<string>} Hash hexadecimal SHA-256
  */
 async function computarFirmaLicencia(deviceId, email, exp, salt = LICENSE_SALT) {
-  const dId = (deviceId || '').trim();
+  const dId = (deviceId || '').trim().toLowerCase();
   const mail = (email || '').trim().toLowerCase();
-  const canonicalData = `${dId}:${mail}:${exp}:${salt}`;
+  const expVal = (exp !== undefined && exp !== null) ? exp.toString().trim() : '-1';
+  const canonicalData = `${dId}:${mail}:${expVal}:${salt}`;
 
   // Entorno Node.js (Pruebas unitarias)
   if (typeof process !== 'undefined' && process.versions && process.versions.node) {
@@ -74,7 +75,7 @@ async function computarFirmaLicencia(deviceId, email, exp, salt = LICENSE_SALT) 
  * @returns {Promise<string>} Token en Base64
  */
 async function generarTokenLicencia(deviceId, email, diasValidez = 365, salt = LICENSE_SALT) {
-  const dId = (deviceId || '').trim();
+  const dId = (deviceId || '').trim().toLowerCase();
   const mail = (email || '').trim().toLowerCase();
   const exp = diasValidez === -1 ? -1 : (Date.now() + diasValidez * 24 * 60 * 60 * 1000);
   const signature = await computarFirmaLicencia(dId, mail, exp, salt);
@@ -94,6 +95,25 @@ async function generarTokenLicencia(deviceId, email, diasValidez = 365, salt = L
 }
 
 /**
+ * Genera un token de activación directamente desde la cadena de solicitud REQ|<DeviceID>|<correo>
+ * @param {string} cadenaSolicitud 
+ * @param {number} [diasValidez=365]
+ * @returns {Promise<string>} Token en Base64
+ */
+async function generarTokenDesdeCadenaSolicitud(cadenaSolicitud, diasValidez = 365) {
+  if (!cadenaSolicitud || typeof cadenaSolicitud !== 'string') {
+    throw new Error('Cadena de solicitud no válida. Formato esperado: REQ|<DeviceID>|<correo>');
+  }
+  const partes = cadenaSolicitud.trim().split('|');
+  if (partes.length < 3 || partes[0].trim().toUpperCase() !== 'REQ') {
+    throw new Error('Formato de solicitud inválido. Debe tener la estructura: REQ|<DeviceID>|<correo>');
+  }
+  const deviceId = partes[1].trim();
+  const email = partes[2].trim();
+  return await generarTokenLicencia(deviceId, email, diasValidez);
+}
+
+/**
  * Valida un token de activación Base64 de forma 100% offline
  * @param {string} tokenBase64 
  * @param {string} [currentDeviceId] Device ID actual para verificar pertenencia
@@ -105,9 +125,16 @@ async function validarTokenLicencia(tokenBase64, currentDeviceId = null, salt = 
     return { valido: false, error: 'Token de activación no proporcionado o formato inválido.' };
   }
 
+  let cleanToken = tokenBase64.trim();
+  // Limpiar posibles comillas de inicio/fin (del copiado en consolas o chats)
+  if ((cleanToken.startsWith('"') && cleanToken.endsWith('"')) || 
+      (cleanToken.startsWith("'") && cleanToken.endsWith("'"))) {
+    cleanToken = cleanToken.slice(1, -1).trim();
+  }
+  cleanToken = cleanToken.replace(/\s+/g, '');
+
   let jsonStr = '';
   try {
-    const cleanToken = tokenBase64.trim().replace(/\s+/g, '');
     if (typeof Buffer !== 'undefined') {
       jsonStr = Buffer.from(cleanToken, 'base64').toString('utf8');
     } else {
@@ -134,8 +161,11 @@ async function validarTokenLicencia(tokenBase64, currentDeviceId = null, salt = 
     return { valido: false, error: 'El token carece de los campos obligatorios (deviceId, email, exp, signature).' };
   }
 
-  // 1. Validar vinculación con el dispositivo receptor
-  if (currentDeviceId && deviceId !== currentDeviceId) {
+  const dId = (deviceId || '').trim().toLowerCase();
+  const curDevId = (currentDeviceId || '').trim().toLowerCase();
+
+  // 1. Validar vinculación con el dispositivo receptor (insensible a mayúsculas/minúsculas)
+  if (curDevId && dId !== curDevId) {
     return {
       valido: false,
       error: `Token emitido para otro dispositivo (${deviceId}). Tu Device ID actual es: ${currentDeviceId}.`
@@ -143,25 +173,26 @@ async function validarTokenLicencia(tokenBase64, currentDeviceId = null, salt = 
   }
 
   // 2. Validar expiración temporal (si exp !== -1)
-  if (exp !== -1 && exp < Date.now()) {
-    const expDate = new Date(exp).toLocaleDateString('es-ES');
+  const expNum = typeof exp === 'string' ? parseInt(exp, 10) : exp;
+  if (expNum !== -1 && expNum < Date.now()) {
+    const expDate = new Date(expNum).toLocaleDateString('es-ES');
     return { valido: false, error: `Esta licencia expiró el ${expDate}.` };
   }
 
   // 3. Validar autenticidad de la firma SHA-256 offline
   const expectedSig = await computarFirmaLicencia(deviceId, email, exp, salt);
-  if (signature.toLowerCase() !== expectedSig.toLowerCase()) {
+  if (signature.trim().toLowerCase() !== expectedSig.trim().toLowerCase()) {
     return { valido: false, error: 'Firma criptográfica inválida. El token ha sido alterado o es apócrifo.' };
   }
 
   return {
     valido: true,
     payload: {
-      deviceId,
-      email,
-      exp,
-      isPerpetual: exp === -1,
-      expirationDate: exp === -1 ? 'Perpetua' : new Date(exp).toISOString()
+      deviceId: dId,
+      email: (email || '').trim().toLowerCase(),
+      exp: expNum,
+      isPerpetual: expNum === -1,
+      expirationDate: expNum === -1 ? 'Perpetua' : new Date(expNum).toISOString()
     }
   };
 }
@@ -425,6 +456,7 @@ if (typeof window !== 'undefined') {
   window.generarCadenaSolicitud = generarCadenaSolicitud;
   window.computarFirmaLicencia = computarFirmaLicencia;
   window.generarTokenLicencia = generarTokenLicencia;
+  window.generarTokenDesdeCadenaSolicitud = generarTokenDesdeCadenaSolicitud;
   window.validarTokenLicencia = validarTokenLicencia;
 }
 
@@ -438,6 +470,7 @@ if (typeof module !== 'undefined' && module.exports) {
     generarCadenaSolicitud,
     computarFirmaLicencia,
     generarTokenLicencia,
+    generarTokenDesdeCadenaSolicitud,
     validarTokenLicencia,
     VaultLicenseManager
   };

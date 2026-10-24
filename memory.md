@@ -92,6 +92,20 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-24 — Spec 003: Robustecimiento de Firma Criptográfica, Emisor Administrativo y Normalización Canónica
+- **Causa Raíz del Error de Firma Inválida:**
+  - Los teclados de dispositivos móviles suelen aplicar auto-capitalización al Device ID (ej. `Dev_...` en lugar de `dev_...`), o bien al copiar desde consolas y chats de mensajería se introducen comillas envolventes (`"..."`), saltos de línea o discrepancias de minúsculas que rompían la verificación de hash SHA-256.
+  - Ausencia de una utilidad administrativa para convertir directamente la cadena `REQ|<DeviceID>|<correo>` en un token Base64 auténtico, forzando manipulaciones manuales del payload que invalidaban la firma.
+- **Normalización Criptográfica Canónica (`assets/js/license.js`):**
+  - Insensibilidad estricta a mayúsculas/minúsculas en `deviceId` y `email` en `computarFirmaLicencia`, `generarTokenLicencia` y `validarTokenLicencia`.
+  - Tratamiento canónico de `exp` convirtiendo siempre a cadena recortada sin importar si es número o string.
+  - Limpieza automática de comillas envolventes (`"` o `'`), espacios en blanco y caracteres de salto de línea en `cleanToken`.
+  - Implementada `generarTokenDesdeCadenaSolicitud(cadenaSolicitud, diasValidez)`.
+- **Herramientas de Emisión Administrativa (CLI y UI):**
+  - Creado script ejecutable de consola [scripts/generar-token.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/scripts/generar-token.js) para generar tokens oficiales con 1 solo comando.
+  - Añadido el panel interactivo *"Generador de Tokens de Activación (Administrador)"* en `#modal-license-info` de [index.html](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/index.html) con soporte para pegar la cadena `REQ|...`, seleccionar vigencia y copiar o aplicar el token con 1 clic.
+- **Suite de Pruebas Unitarias:** 45/45 pruebas pasando al 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
+
 ### 2026-10-24 — Spec 003: Generación Automática de Usuario e Inclusión Reactiva en la Cadena de Solicitud de Licencia
 - **Generación y Persistencia Dual del Usuario (`assets/js/license.js`):**
   - Implementada la generación automática de un usuario asociado legible (`usuario_<shortId>@boveda.com`) si el dispositivo no posee sesión activa ni registro previo, persistido dualmente en `IndexedDB` y `localStorage` (`vault_user_email`).

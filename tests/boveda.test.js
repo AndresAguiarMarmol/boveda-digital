@@ -820,6 +820,27 @@ test('SDD 003: Generación automática de usuario y presencia obligatoria en la 
   assert.equal(cadenaDirecta, `REQ|${manager.deviceId}|cliente@gmail.com`);
 });
 
+test('SDD 003: generarTokenDesdeCadenaSolicitud, insensibilidad a mayúsculas en Device ID y tolerancia a comillas', async () => {
+  const { generarTokenDesdeCadenaSolicitud, validarTokenLicencia } = require('../assets/js/license.js');
+
+  const reqStr = 'REQ|dev_ABC123DEF|usuario.pro@empresa.com';
+  const token = await generarTokenDesdeCadenaSolicitud(reqStr, 365);
+  assert.ok(token, 'Debe generar el token en Base64');
+
+  // Validar con deviceId en minúsculas contra token generado en mayúsculas
+  const val1 = await validarTokenLicencia(token, 'dev_abc123def');
+  assert.equal(val1.valido, true, 'Debe ser válido independientemente de mayúsculas en Device ID');
+
+  // Validar con comillas envolventes (caso típico de copiar desde console o WhatsApp)
+  const valConComillas = await validarTokenLicencia(`"${token}"`, 'dev_abc123def');
+  assert.equal(valConComillas.valido, true, 'Debe tolerar comillas envolventes sin romper firma');
+
+  // Validar con espacios o saltos de línea añadidos accidentalmente
+  const valConEspacios = await validarTokenLicencia(`  \n${token}\r\n  `, 'dev_abc123def');
+  assert.equal(valConEspacios.valido, true, 'Debe limpiar saltos de línea y espacios');
+});
+
+
 
 
 

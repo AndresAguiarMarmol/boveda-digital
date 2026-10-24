@@ -224,10 +224,10 @@ class VaultStorage {
    * @param {string} userId 
    * @returns {Promise<object>}
    */
-  async exportBackupData(userId) {
+  async exportBackupData(userId, cryptoSalt = '', pinHash = '') {
     const docs = await this.getAllDocuments(userId);
     const customDrawers = await this.getSetting(`customDrawers_${userId}`) || {};
-    return serializarBackupBoveda(docs, customDrawers, userId);
+    return serializarBackupBoveda(docs, customDrawers, userId, new Date().toISOString(), cryptoSalt, pinHash);
   }
 
   /**
@@ -258,6 +258,13 @@ class VaultStorage {
       await this.setSetting(`customDrawers_${userId}`, mergedDrawers);
     }
 
+    // Persistir el Salt criptográfico del respaldo si viene incluido
+    if (backupData.crypto_salt) {
+      await this.setSetting(`userSalt_${userId}`, backupData.crypto_salt);
+      await this.setSetting('userSalt', backupData.crypto_salt);
+      await this.setSetting('last_imported_salt', backupData.crypto_salt);
+    }
+
     await this.logAuditEvent(userId, 'VAULT_RESTORED', {
       restoredDocs: backupData.documents.length,
       totalMerged: mergedDocs.length
@@ -267,7 +274,8 @@ class VaultStorage {
       success: true,
       restoredCount: backupData.documents.length,
       totalDocs: mergedDocs.length,
-      customDrawersCount: Object.keys(backupData.customDrawers || {}).length
+      customDrawersCount: Object.keys(backupData.customDrawers || {}).length,
+      cryptoSalt: backupData.crypto_salt || null
     };
   }
 
@@ -291,12 +299,14 @@ class VaultStorage {
 // FUNCIONES PURAS DE RESPALDO Y RECUPERACIÓN (Para Browser y Tests en Node.js)
 // =============================================================================
 
-function serializarBackupBoveda(documentos = [], customDrawers = {}, userId = 'anonymous', fechaISO = new Date().toISOString()) {
+function serializarBackupBoveda(documentos = [], customDrawers = {}, userId = 'anonymous', fechaISO = new Date().toISOString(), cryptoSalt = '', pinHash = '') {
   return {
     app: 'BovedaDigital',
     version: '1.0',
     exported_at: fechaISO,
     user_id: userId,
+    crypto_salt: cryptoSalt || '',
+    pin_hash: pinHash || '',
     customDrawers: customDrawers || {},
     documents: (documentos || []).map(doc => ({
       id: doc.id,

@@ -20,6 +20,7 @@ class VaultAuth {
     this.refreshToken = null;
     this.masterKey = null; // Clave AES-GCM derivada en memoria
     this.salt = null;
+    this.lastEnteredPin = null; // PIN ingresado en memoria volátil para re-derivación y migraciones
   }
 
   /**
@@ -86,6 +87,7 @@ class VaultAuth {
           await window.vaultStorage.setSetting('currentUser', this.currentUser);
           await window.vaultStorage.setSetting('accessToken', this.accessToken);
           await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
+          await window.vaultStorage.setSetting('userSalt_' + data.user.email, this.salt);
           await window.vaultStorage.setSetting('userSalt', this.salt);
 
           await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'cloud' });
@@ -180,6 +182,7 @@ class VaultAuth {
 
     // Derivar la clave maestra AES-256
     this.masterKey = await window.vaultCrypto.deriveKeyFromPin(pin, this.salt);
+    this.lastEnteredPin = pin;
     await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'PIN_SETUP_COMPLETED');
     return true;
   }
@@ -216,6 +219,7 @@ class VaultAuth {
 
     // Derivar y retener la clave maestra AES-256 en memoria volátil
     this.masterKey = await window.vaultCrypto.deriveKeyFromPin(pin, this.salt);
+    this.lastEnteredPin = pin;
     await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'VAULT_UNLOCKED');
     return true;
   }
@@ -248,6 +252,7 @@ class VaultAuth {
    */
   lockVault() {
     this.masterKey = null;
+    this.lastEnteredPin = null;
     return true;
   }
 

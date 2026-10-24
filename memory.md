@@ -40,6 +40,7 @@ Compatible con el backend centralizado de la app de Halterofilia:
   "sub": "usr_9b1deb4d-3b7d",
   "email": "usuario@ejemplo.com",
   "apps": ["halterofilia", "boveda_digital"],
+  "crypto_salt": "ae8713595fed1e759db1062454187513",
   "subscription": {
     "plan": "free" | "pro",
     "status": "active",
@@ -51,7 +52,7 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ### C. Persistencia en Servidor / Cloud (`server.js`, `data/vault_cloud.json`)
 - **Almacenamiento persistente en disco/cloud:**
-  - `users`: Directorio de usuarios registrados con hash SHA-256 de contraseña y perfil de suscripción.
+  - `users`: Directorio de usuarios registrados con hash SHA-256 de contraseña, perfil de suscripción y `cryptoSalt` unificado para derivación de claves simétricas en clientes móviles y de escritorio.
   - `documents`: Mapa persistente por `user_id` con registros cifrados Zero-Knowledge (`encrypted_payload`, `iv`, `checksum`, `category`, `title`, `expiry_date`, `created_at`, `updated_at`).
   - `shares`: Registro de tokens de acceso efímeros compartidos.
 
@@ -60,6 +61,7 @@ Compatible con el backend centralizado de la app de Halterofilia:
 ## 2. Decisiones vigentes
 
 - **Cifrado Zero-Knowledge y Web Crypto API:** El backend centralizado nunca recibe las claves maestras ni los documentos en texto claro. La clave simétrica de 256 bits se deriva exclusivamente en el cliente mediante PBKDF2 (100,000 iteraciones, SHA-256) a partir del PIN maestro del usuario y un salt criptográfico.
+- **Preservación y Portabilidad del Salt Criptográfico en Respaldos (`crypto_salt`):** Para garantizar que un respaldo JSON exportado en un dispositivo (PC) pueda ser importado y descifrado de forma transparente en otro dispositivo (teléfono celular), el archivo de respaldo exporta de manera pública y estandarizada el `crypto_salt` y el `pin_hash` de verificación. El módulo de descifrado en cliente implementa recuperación multi-salt automática que prueba claves secundarias/históricas con el PIN en memoria y re-cifra transparentemente los expedientes descifrados con la clave maestra activa actual.
 - **Acceso 100% Offline:** Toda la información cifrada reside en `IndexedDB`, permitiendo consultar y crear documentos sin conexión a internet.
 - **Sincronización Cloud Bidireccional y Despliegue en Google Cloud Run:** La aplicación cuenta con sincronización bidireccional automática y manual (`batch-sync`, descarga remota y eliminación sincronizada `DELETE /api/v1/documents/:id`). Detecta automáticamente el origen del servidor, actualiza el indicador de estado en la UI (🟢 Sincronizado, 🟡 Sincronizando, ⚪ Offline) y se distribuye con `Dockerfile` nativo optimizado para despliegue en Google Cloud Run.
 - **Compatibilidad con Backend Existente (Halterofilia):** Utiliza autenticación REST sobre HTTPS con tokens JWT / OAuth2, refresh tokens rotativos y sesiones administradas en servidor.
@@ -68,12 +70,27 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - *Plan PRO:* Almacenamiento ilimitado, alertas de vencimiento, copias de seguridad cifradas en la nube y exportación avanzada.
 - **Metáfora Visual de Mueble Gavetero (Filing Cabinet) Cromático y Extensible:** La organización de documentos se estructura en un archivador blindado donde cada gaveta cuenta con una identidad cromática única (LED, reflejo de tirador, bordes, riel y credencial visual). El sistema incluye 5 gavetas base (`identidad` Cyan, `vehiculos` Esmeralda, `finanzas` Ámbar, `residencia` Púrpura, `salud` Rosa) y permite al usuario crear gavetas personalizadas con nuevos conceptos, selector de color HSL/Hex y selector de iconos Lucide, con persistencia offline en `IndexedDB`. Los documentos cuentan con soporte completo de ciclo de vida: lectura descifrada, impresión limpia (`window.print()`), modificación con re-cifrado AES-256-GCM y eliminación.
 - **Arranque a 1 Toque (PWA) y Soporte Multiplataforma:** La aplicación implementa arquitectura Progressive Web App (`manifest.json`, `sw.js` y meta tags de pantalla completa standalone). En dispositivos móviles (Android/iOS) se instala como app nativa en la pantalla de inicio abriendo al instante sin barras de navegador. En escritorios Windows cuenta con lanzador batch de 1 toque (`iniciar.bat`) que orquesta el servidor local y el navegador.
-- **Sincronización y Respaldo Cifrado con Google Drive (Zero-Knowledge):** Los respaldos destinados a Google Drive exportan el paquete criptográfico estandarizado (`boveda_backup.json` con payloads AES-256-GCM, IVs y checksums SHA-256). Google Drive almacena exclusivamente el archivo blob cifrado bajo el scope restringido `drive.file` / `drive.appdata`, garantizando que ni Google ni terceros pueden acceder a los datos sin el PIN maestro derivado por el usuario. La aplicación cuenta con sincronización automática continua en segundo plano (con debounce de 1.5s y refresco silencioso de token GIS) que se activa automáticamente al desbloquear la bóveda, crear, modificar o eliminar expedientes y gavetas personalizadas, configurable mediante un interruptor interactivo en la interfaz.
+- **Sincronización y Respaldo Cifrado con Google Drive (Zero-Knowledge):** Los respaldos destinados a Google Drive exportan el paquete criptográfico estandarizado (`boveda_backup.json` con payloads AES-256-GCM, IVs, checksums SHA-256 y salt criptográfico). Google Drive almacena exclusivamente el archivo blob cifrado bajo el scope restringido `drive.file` / `drive.appdata`, garantizando que ni Google ni terceros pueden acceder a los datos sin el PIN maestro derivado por el usuario. La aplicación cuenta con sincronización automática continua en segundo plano (con debounce de 1.5s y refresco silencioso de token GIS) que se activa automáticamente al desbloquear la bóveda, crear, modificar o eliminar expedientes y gavetas personalizadas, configurable mediante un interruptor interactivo en la interfaz.
 - **Compatibilidad y Despliegue en GitHub Pages:** Toda la aplicación opera con rutas relativas (`./`), soporte de PWA en subdirectorios (`manifest.json`, `sw.js`), bypass de Jekyll (`.nojekyll`) y contingencia offline 100% autónoma en `IndexedDB` con sincronización Zero-Knowledge en Google Drive, permitiendo desplegarse de forma transparente y gratuita en GitHub Pages (`https://andresaguiarmarmol.github.io/boveda-digital/`) sin necesidad obligatoria de servidor Node.js backend.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-24 — Corrección de Restauración de Respaldo Multi-Dispositivo y Preservación de Salt Criptográfico
+- **Preservación de Salt en Archivos de Respaldo (`storage.js`, `app.js`, `gdrive.js`):**
+  - Incorporado `crypto_salt` y `pin_hash` dentro de la cabecera del JSON generado por `serializarBackupBoveda()` y `exportBackupData()`.
+  - Permite a cualquier dispositivo receptor (como teléfonos celulares) conocer el salt con el que fueron cifrados los expedientes para derivar la misma clave maestra simétrica a partir del PIN.
+- **Recuperación Multi-Salt y Auto-Reencriptación en Cliente (`app.js`):**
+  - Implementada en `loadAndRenderDocuments()` una rutina de descifrado resiliente con sales históricas cuando la clave principal falla.
+  - Al descifrar exitosamente con una sal histórica o secundaria, el sistema re-cifra el expediente automáticamente con la clave activa del dispositivo y lo actualiza en `IndexedDB`, unificando la bóveda en reposo.
+  - Alertas transparentes en la UI en caso de expedientes que requieran verificar el PIN maestro.
+- **Persistencia de Salt en Backend y Compatibilidad Multi-Dispositivo (`server.js`, `auth.js`):**
+  - `server.js` emite y almacena el `crypto_salt` unificado del usuario en el token JWT y respuesta de login/registro.
+  - `auth.js` persiste `userSalt_${email}` localmente en modo online y retiene `lastEnteredPin` en memoria volátil de sesión para migraciones automáticas sin fricción.
+- **Corrección de Conteo en Google Drive (`gdrive.js`):**
+  - Ajustado `mergedCount` al total de documentos recuperados.
+- **Suite de Pruebas Automatizadas:** 36/36 tests pasando en verde (`node --test tests/boveda.test.js tests/server.test.js`).
 
 ### 2026-10-21 — Compatibilidad Completa con GitHub Pages y PWA en Subrutas
 - **Rutas Relativas y Caché de PWA (`manifest.json`, `sw.js`, `index.html`):**

@@ -273,6 +273,7 @@ const server = http.createServer(async (req, res) => {
           full_name: user.fullName,
           roles: ['user'],
           apps: ['halterofilia', 'boveda_digital'],
+          crypto_salt: user.cryptoSalt || 'ae8713595fed1e759db1062454187513',
           subscription: {
             plan: user.plan,
             status: 'active',
@@ -313,7 +314,8 @@ const server = http.createServer(async (req, res) => {
           email: normalizedEmail,
           passwordHash: hashPassword(password),
           fullName: full_name || normalizedEmail.split('@')[0].toUpperCase(),
-          plan: 'free'
+          plan: 'free',
+          cryptoSalt: crypto.randomBytes(16).toString('hex')
         };
         db.users.push(newUser);
         saveDB();
@@ -324,6 +326,7 @@ const server = http.createServer(async (req, res) => {
           full_name: newUser.fullName,
           roles: ['user'],
           apps: ['halterofilia', 'boveda_digital'],
+          crypto_salt: newUser.cryptoSalt,
           subscription: {
             plan: 'free',
             status: 'active',

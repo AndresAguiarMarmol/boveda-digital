@@ -214,14 +214,72 @@ class BovedaApp {
     }
 
     this.unlockedDocuments = [];
+    let failedCount = 0;
+    let reEncryptedCount = 0;
+
+    // Obtener sales candidatas para recuperación resiliente de expedientes históricos
+    const candidateSalts = new Set([
+      window.vaultAuth.salt,
+      await window.vaultStorage.getSetting('last_imported_salt'),
+      await window.vaultStorage.getSetting('backup_crypto_salt_' + user.sub),
+      await window.vaultStorage.getSetting('userSalt_' + user.email),
+      'ae8713595fed1e759db1062454187513',
+      '226000658459336d4184642799fc8498',
+      '5e1fc8e580b04dcd8d7a1a337d87b471',
+      '4c11607d7f05ed75811057969f60880e'
+    ]);
+
+    const fallbackKeys = [];
+    if (window.vaultAuth.lastEnteredPin) {
+      for (const s of candidateSalts) {
+        if (s && s !== window.vaultAuth.salt) {
+          try {
+            const k = await window.vaultCrypto.deriveKeyFromPin(window.vaultAuth.lastEnteredPin, s);
+            fallbackKeys.push({ salt: s, key: k });
+          } catch(e) {}
+        }
+      }
+    }
 
     for (const raw of rawDocs) {
+      let decryptedPayload = null;
+
+      // 1. Intentar descifrado con la clave maestra actual
       try {
-        const decryptedPayload = await window.vaultCrypto.decrypt(
+        decryptedPayload = await window.vaultCrypto.decrypt(
           window.vaultAuth.masterKey,
           raw.encrypted_payload,
           raw.iv
         );
+      } catch (err) {
+        // 2. Intentar descifrado resiliente con sales históricas si falla la principal
+        for (const fb of fallbackKeys) {
+          try {
+            decryptedPayload = await window.vaultCrypto.decrypt(
+              fb.key,
+              raw.encrypted_payload,
+              raw.iv
+            );
+            if (decryptedPayload) {
+              // Re-cifrar con la clave maestra actual para unificar y normalizar en reposo
+              try {
+                const reEnc = await window.vaultCrypto.encrypt(window.vaultAuth.masterKey, decryptedPayload);
+                raw.encrypted_payload = reEnc.ciphertext;
+                raw.iv = reEnc.iv;
+                raw.checksum = reEnc.checksum;
+                raw.updated_at = new Date().toISOString();
+                await window.vaultStorage.saveDocument(raw);
+                reEncryptedCount++;
+              } catch(reErr) {
+                console.warn('[BovedaApp] Error al re-cifrar documento normalizado:', reErr);
+              }
+              break;
+            }
+          } catch(fbErr) {}
+        }
+      }
+
+      if (decryptedPayload) {
         this.unlockedDocuments.push({
           id: raw.id,
           category: raw.category || 'identidad',
@@ -231,9 +289,18 @@ class BovedaApp {
           updated_at: raw.updated_at,
           is_synced: raw.is_synced
         });
-      } catch (err) {
-        console.error('[BovedaApp] Error al descifrar documento:', raw.id, err);
+      } else {
+        failedCount++;
+        console.warn('[BovedaApp] Documento no pudo ser descifrado:', raw.id, raw.title);
       }
+    }
+
+    if (reEncryptedCount > 0) {
+      console.log(`[BovedaApp] ${reEncryptedCount} expedientes migrados y re-cifrados exitosamente con tu clave actual.`);
+    }
+
+    if (failedCount > 0 && this.unlockedDocuments.length === 0) {
+      this.showToast(`Atención: ${failedCount} expedientes no pudieron descifrarse con el PIN actual.`, 'warning');
     }
 
     this.renderMetrics();
@@ -360,7 +427,9 @@ class BovedaApp {
     try {
       const user = window.vaultAuth.currentUser;
       const userId = user ? user.sub || user.email : 'local_user';
-      const backupData = await window.vaultStorage.exportBackupData(userId);
+      const salt = window.vaultAuth?.salt || await window.vaultStorage.getSetting('userSalt') || 'ae8713595fed1e759db1062454187513';
+      const pinHash = await window.vaultStorage.getSetting('vaultPinHash_' + (user?.email || 'default')) || '';
+      const backupData = await window.vaultStorage.exportBackupData(userId, salt, pinHash);
 
       const jsonStr = JSON.stringify(backupData, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -406,6 +475,25 @@ class BovedaApp {
       const user = window.vaultAuth.currentUser;
       const userId = user ? user.sub || user.email : 'local_user';
 
+      // Si el archivo de respaldo contiene un crypto_salt y difiere del actual
+      if (backupData.crypto_salt && window.vaultAuth.salt !== backupData.crypto_salt) {
+        if (window.vaultAuth.lastEnteredPin) {
+          try {
+            const newKey = await window.vaultCrypto.deriveKeyFromPin(window.vaultAuth.lastEnteredPin, backupData.crypto_salt);
+            window.vaultAuth.masterKey = newKey;
+            window.vaultAuth.salt = backupData.crypto_salt;
+            await window.vaultStorage.setSetting('userSalt', backupData.crypto_salt);
+            if (user?.email) {
+              await window.vaultStorage.setSetting('userSalt_' + user.email, backupData.crypto_salt);
+              const newHash = await window.vaultCrypto.sha256(window.vaultAuth.lastEnteredPin + ':' + backupData.crypto_salt);
+              await window.vaultStorage.setSetting('vaultPinHash_' + user.email, newHash);
+            }
+          } catch(errSalt) {
+            console.warn('[BovedaApp] No se pudo re-derivar clave con el salt del respaldo:', errSalt);
+          }
+        }
+      }
+
       const result = await window.vaultStorage.importBackupData(backupData, userId);
 
       // Si venían gavetas personalizadas, recargarlas en memoria
@@ -418,7 +506,8 @@ class BovedaApp {
       // Recargar y re-renderizar documentos descifrados en memoria
       await this.loadAndRenderDocuments();
 
-      this.showToast(`Recuperación exitosa: ${result.restoredCount} expedientes restaurados (Total: ${result.totalDocs}).`, 'success');
+      const activeCount = this.unlockedDocuments ? this.unlockedDocuments.length : 0;
+      this.showToast(`Recuperación exitosa: ${result.restoredCount} expedientes restaurados (${activeCount} visibles en el archivador).`, 'success');
     } catch (err) {
       console.error('[BovedaApp] Error al importar respaldo:', err);
       this.showToast('Error en la recuperación: ' + err.message, 'danger');

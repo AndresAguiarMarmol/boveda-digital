@@ -293,6 +293,15 @@ test('serializarBackupBoveda: estructura JSON estandarizada con metadatos y Zero
   assert.equal(backup.documents[0].encrypted_payload, 'payload_cifrado_base64');
 });
 
+test('serializarBackupBoveda: preserva crypto_salt y pin_hash para restauración multi-dispositivo', () => {
+  const docs = [{ id: 'doc_1', category: 'identidad', encrypted_payload: 'x', iv: 'y', checksum: 'z' }];
+  const backup = serializarBackupBoveda(docs, {}, 'usr_test', '2026-10-24T20:00:00.000Z', 'ae8713595fed1e759db1062454187513', 'hash123');
+
+  assert.equal(backup.crypto_salt, 'ae8713595fed1e759db1062454187513');
+  assert.equal(backup.pin_hash, 'hash123');
+  assert.equal(validarBackupBoveda(backup).valido, true);
+});
+
 test('validarBackupBoveda: valida esquemas auténticos y rechaza archivos corruptos o ajenos', () => {
   const backupValido = {
     app: 'BovedaDigital',

@@ -206,8 +206,10 @@ class VaultGoogleDrive {
       throw new Error('Almacenamiento local no disponible');
     }
 
-    // 1. Exportar datos cifrados locales (AES-256-GCM + IVs + gavetas)
-    const backupData = await window.vaultStorage.exportBackupData(userId);
+    // 1. Exportar datos cifrados locales (AES-256-GCM + IVs + gavetas + Salt Zero-Knowledge)
+    const salt = window.vaultAuth?.salt || await window.vaultStorage.getSetting('userSalt') || '';
+    const pinHash = await window.vaultStorage.getSetting('vaultPinHash_' + (window.vaultAuth?.currentUser?.email || 'default')) || '';
+    const backupData = await window.vaultStorage.exportBackupData(userId, salt, pinHash);
     const backupJson = JSON.stringify(backupData, null, 2);
 
     // 2. Si estamos en modo real con Google API
@@ -312,8 +314,8 @@ class VaultGoogleDrive {
 
     return {
       success: true,
-      mergedCount: result.mergedCount,
-      timestamp: backupData.metadata?.exported_at
+      mergedCount: result.totalDocs || result.restoredCount || 0,
+      timestamp: backupData.metadata?.exported_at || backupData.exported_at
     };
   }
 

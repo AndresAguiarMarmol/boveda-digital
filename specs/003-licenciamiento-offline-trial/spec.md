@@ -39,13 +39,13 @@ El sistema debe operar de forma totalmente autónoma (Zero-Knowledge y sin reque
     "signature": "<hash_sha256_hex>"
   }
   ```
-- **RF-5 (Firma Criptográfica SHA-256):** La firma del token DEBE generarse y validarse computando el hash SHA-256 sobre la concatenación canónica:
-  `SHA-256("${deviceId}:${email}:${exp}:${SALT}")`
-  donde `SALT` es estrictamente `"Halterofilia-SuperSecret-Salt-2026"`.
-- **RF-6 (Validación Criptográfica Offline):** Cuando el usuario ingresa un Token de Activación, el sistema DEBE decodificar el payload en Base64, comprobar que `deviceId` coincide con el dispositivo actual, validar que `exp` no haya expirado (o sea `-1`), y recalcular la firma mediante `crypto.subtle.digest('SHA-256', ...)`. Si coincide, DEBE persistir la activación y liberar la bóveda.
+- **RF-5 (Firma Criptográfica SHA-256 y Compatibilidad Universal):** La firma del token DEBE generarse y validarse computando el hash SHA-256 sobre la concatenación canónica estándar:
+  `SHA-256("${deviceId}|${email}|${exp}:${SALT}")` o `SHA-256("${deviceId}:${email}:${exp}:${SALT}")`
+  donde `SALT` es estrictamente `"Halterofilia-SuperSecret-Salt-2026"`, con tolerancia a delimitadores pipe `|` (estándar de la App Halterofilia) y dos puntos `:`.
+- **RF-6 (Validación Criptográfica Offline):** Cuando el usuario ingresa un Token de Activación, el sistema DEBE decodificar el payload en Base64, comprobar que `deviceId` coincide con el dispositivo actual (insensible a mayúsculas/minúsculas), validar que `exp` no haya expirado (o sea `-1` / 9999 días para vitalicia), y recalcular la firma mediante `crypto.subtle.digest('SHA-256', ...)`. Si coincide, DEBE persistir la activación y liberar la bóveda.
 - **RF-7 (Bloqueo no eludible al expirar):** Si el período de prueba ha expirado (`> 7 días`) y no existe una licencia válida activa, el sistema DEBE montar un overlay modal `#modal-trial-lock` no eludible (sin tecla Escape, sin clic de fondo, sin scroll detrás) que bloquee el acceso al dashboard y los modales de documentos.
 - **RF-8 (Indicador de Estado en Dashboard):** Mientras la licencia o trial esté activo, la barra superior DEBE exhibir un badge de estado (ej. `Trial: 5d restantes` o `Licencia Offline Activa`).
-- **RF-9 (Herramienta de Emisión Administrativa):** El sistema DEBE incluir una utilidad (módulo/script y función en consola o servidor) `generarTokenActivacion(deviceId, email, diasValidez)` para que el administrador pueda emitir tokens válidos a los clientes que envíen su código de solicitud.
+- **RF-9 (Separación Arquitectónica: Emisión Externa en Ecosistema Halterofilia):** El servicio generador de tokens NO PERTENECE a la aplicación cliente de Bóveda Digital. El cliente se limita a emitir la cadena `REQ|<DeviceID>|<correo>` y validar el token. La emisión de tokens reside en la herramienta administrativa externa del ecosistema de Halterofilia (`panel_administrador_de_licencias.html` en Halterofilia / Administrador Halterofilia) y en el endpoint administrativo `POST /api/v1/license/generate` del backend centralizado.
 
 ---
 
@@ -61,6 +61,7 @@ El sistema debe operar de forma totalmente autónoma (Zero-Knowledge y sin reque
 ## Criterios de Aceptación
 1. Un dispositivo recién inicializado registra `trial_start_date` y muestra 7 días restantes.
 2. Si se adelanta la fecha del trial a 8 días, la aplicación muestra inmediatamente el bloqueo no eludible con el contacto `+56933395447` y la cadena `REQ|<DeviceID>|<correo>`.
-3. Al ingresar un token firmado con `"Halterofilia-SuperSecret-Salt-2026"` para ese Device ID y correo, la aplicación valida la firma con `crypto.subtle`, quita el bloqueo y activa la licencia.
-4. Si se ingresa un token manipulado, con firma inválida o emitido para otro Device ID, el sistema rechaza la activación y mantiene el bloqueo.
-5. Las pruebas automatizadas con Node.js validan la generación y validación de tokens y el ciclo de vida del trial al 100%.
+3. Al ingresar un token generado por el Panel Administrador de Halterofilia (firmado con `"Halterofilia-SuperSecret-Salt-2026"` para ese Device ID y correo), la aplicación valida la firma con `crypto.subtle`, quita el bloqueo y activa la licencia de forma 100% offline.
+4. La aplicación cliente de Bóveda Digital no incluye formularios ni paneles para generar tokens, manteniendo aislada la potestad de emisión en el Administrador de Halterofilia.
+5. Si se ingresa un token manipulado, con firma inválida o emitido para otro Device ID, el sistema rechaza la activación y mantiene el bloqueo.
+6. Las pruebas automatizadas con Node.js validan la generación externa, la validación de tokens y el ciclo de vida del trial al 100% (48/48 tests en verde).

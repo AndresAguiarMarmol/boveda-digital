@@ -74,7 +74,8 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - *Device ID Único y Usuario Asociado:* Generados de forma persistente (`dev_<uuid>` y `usuario_<shortId>@boveda.com` o correo ingresado) y resguardados con persistencia dual (`IndexedDB` + `localStorage`).
   - *Cadena de Solicitud Interactiva:* `REQ|<DeviceID>|<usuario>` con edición y sincronización reactiva en tiempo real en los modales `#modal-trial-lock` y `#modal-license-info`, copiado en 1 toque y enlace directo a WhatsApp `+56933395447`.
   - *Token de Activación:* Cadena Base64 con payload estructurado `{ deviceId, email, exp, signature }`.
-  - *Firma Criptográfica SHA-256:* Computada de forma canónica sobre `${deviceId}:${email}:${exp}:${salt}` con sal fija `"Halterofilia-SuperSecret-Salt-2026"`, validable 100% offline mediante Web Crypto API (`crypto.subtle`).
+  - *Firma Criptográfica SHA-256 y Delimitador Universal:* Firma calculada sobre la concatenación `${deviceId}|${email}|${exp}|${salt}` con sal fija `"Halterofilia-SuperSecret-Salt-2026"`. La validación en cliente tolera universalmente firmas generadas con delimitador pipe `|` (estándar Halterofilia) o dos puntos `:`, con insensibilidad a mayúsculas/minúsculas y comillas envolventes, y reconoce vigencias perpetuas de 9999 días o `-1`.
+  - *Separación Arquitectónica Estricta (Cliente vs Administrador):* La aplicación cliente de Bóveda Digital NO expone generadores de tokens. El generador oficial pertenece exclusivamente al ecosistema administrativo externo de Halterofilia (`panel_administrador_de_licencias.html` en `Administrador Halterofilia` y `Halterofilia`) y al endpoint administrativo del backend `POST /api/v1/license/generate`.
   - *Bloqueo Estricto No Eludible:* Al expirar los 7 días sin licencia activa, el overlay `#modal-trial-lock` bloquea la interacción con la aplicación impidiendo eludir la pantalla hasta ingresar un token válido.
 - **Service Worker v3 con Estrategia Network-First para Código Local:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v3'`, incorporando `license.js` a los recursos esenciales precacheados.
 - **Acceso 100% Offline:** Toda la información cifrada reside en `IndexedDB`, permitiendo consultar y crear documentos sin conexión a internet.
@@ -92,19 +93,16 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
-### 2026-10-24 — Spec 003: Robustecimiento de Firma Criptográfica, Emisor Administrativo y Normalización Canónica
-- **Causa Raíz del Error de Firma Inválida:**
-  - Los teclados de dispositivos móviles suelen aplicar auto-capitalización al Device ID (ej. `Dev_...` en lugar de `dev_...`), o bien al copiar desde consolas y chats de mensajería se introducen comillas envolventes (`"..."`), saltos de línea o discrepancias de minúsculas que rompían la verificación de hash SHA-256.
-  - Ausencia de una utilidad administrativa para convertir directamente la cadena `REQ|<DeviceID>|<correo>` en un token Base64 auténtico, forzando manipulaciones manuales del payload que invalidaban la firma.
-- **Normalización Criptográfica Canónica (`assets/js/license.js`):**
-  - Insensibilidad estricta a mayúsculas/minúsculas en `deviceId` y `email` en `computarFirmaLicencia`, `generarTokenLicencia` y `validarTokenLicencia`.
-  - Tratamiento canónico de `exp` convirtiendo siempre a cadena recortada sin importar si es número o string.
-  - Limpieza automática de comillas envolventes (`"` o `'`), espacios en blanco y caracteres de salto de línea en `cleanToken`.
-  - Implementada `generarTokenDesdeCadenaSolicitud(cadenaSolicitud, diasValidez)`.
-- **Herramientas de Emisión Administrativa (CLI y UI):**
-  - Creado script ejecutable de consola [scripts/generar-token.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/scripts/generar-token.js) para generar tokens oficiales con 1 solo comando.
-  - Añadido el panel interactivo *"Generador de Tokens de Activación (Administrador)"* en `#modal-license-info` de [index.html](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/index.html) con soporte para pegar la cadena `REQ|...`, seleccionar vigencia y copiar o aplicar el token con 1 clic.
-- **Suite de Pruebas Unitarias:** 45/45 pruebas pasando al 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
+### 2026-10-24 — Desacoplamiento del Generador de Tokens hacia la App Halterofilia y Compatibilidad Criptográfica Universal
+- **Separación Arquitectónica Estricta:**
+  - El generador de tokens de activación fue removido de la interfaz cliente de Bóveda Digital (`index.html` y `assets/js/app.js`), cumpliendo con el principio de que los clientes solo emiten la Cadena de Solicitud (`REQ|<DeviceID>|<correo>`) y validan el token recibido.
+  - La generación de tokens de activación pertenece exclusivamente a la aplicación y panel de administración de Halterofilia (`panel_administrador_de_licencias.html` en `Administrador Halterofilia` y `Halterofilia`), y al endpoint administrativo del servidor backend `POST /api/v1/license/generate`.
+- **Compatibilidad Criptográfica Universal (`assets/js/license.js`):**
+  - Resuelta la discrepancia de delimitadores: el generador externo de Halterofilia computa la firma SHA-256 con pipes `|` (`${deviceId}|${email}|${exp}|${salt}`), mientras que Bóveda Digital admitía dos puntos `:`.
+  - La función `validarTokenLicencia` ahora comprueba de forma resiliente tanto el estándar Halterofilia con pipes `|` como el formato alternativo con `:`, considerando normalización a minúsculas, valores literales y expiraciones vitalicias de 9999 días o `-1`.
+  - Actualizado el panel externo `panel_administrador_de_licencias.html` en `Administrador Halterofilia` y `Halterofilia` con soporte explícito para Bóveda Digital, vigencias múltiples (30, 90, 365, 9999 y -1) y codificación UTF-8 limpia.
+- **Suite de Pruebas Unitarias:**
+  - 48/48 pruebas pasando al 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`, validando la compatibilidad directa con tokens emitidos por Halterofilia, la ausencia de generadores en el cliente y el endpoint de backend.
 
 ### 2026-10-24 — Spec 003: Generación Automática de Usuario e Inclusión Reactiva en la Cadena de Solicitud de Licencia
 - **Generación y Persistencia Dual del Usuario (`assets/js/license.js`):**

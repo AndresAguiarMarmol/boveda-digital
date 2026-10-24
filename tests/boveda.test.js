@@ -840,6 +840,64 @@ test('SDD 003: generarTokenDesdeCadenaSolicitud, insensibilidad a mayúsculas en
   assert.equal(valConEspacios.valido, true, 'Debe limpiar saltos de línea y espacios');
 });
 
+test('SDD 003: Compatibilidad 100% con tokens emitidos por la App Halterofilia externa (delimitador pipe y 9999 días)', async () => {
+  const { validarTokenLicencia, LICENSE_SALT } = require('../assets/js/license.js');
+  const cryptoNode = require('node:crypto');
+
+  const deviceId = 'dev_halterofilia_ext_001';
+  const email = 'atleta@halterofilia.com';
+  const days = 365;
+  const exp = Date.now() + (days * 24 * 60 * 60 * 1000);
+
+  // 1. Simulación exacta del cálculo en panel_administrador_de_licencias.html de Halterofilia
+  const rawHalterofilia = `${deviceId}|${email}|${exp}|${LICENSE_SALT}`;
+  const sigHalterofilia = cryptoNode.createHash('sha256').update(rawHalterofilia, 'utf8').digest('hex');
+
+  const payloadHalterofilia = {
+    deviceId,
+    email,
+    exp,
+    signature: sigHalterofilia
+  };
+  const tokenHalterofilia = Buffer.from(JSON.stringify(payloadHalterofilia)).toString('base64');
+
+  // Validación en Bóveda Digital
+  const res = await validarTokenLicencia(tokenHalterofilia, deviceId);
+  assert.equal(res.valido, true, 'El token emitido por el generador de Halterofilia debe ser 100% válido');
+  assert.equal(res.payload.deviceId, deviceId.toLowerCase());
+  assert.equal(res.payload.email, email.toLowerCase());
+
+  // 2. Licencia Vitalicia de Halterofilia (9999 días)
+  const expVitalicia = Date.now() + (9999 * 24 * 60 * 60 * 1000);
+  const rawVitalicia = `${deviceId}|${email}|${expVitalicia}|${LICENSE_SALT}`;
+  const sigVitalicia = cryptoNode.createHash('sha256').update(rawVitalicia, 'utf8').digest('hex');
+  const tokenVitalicia = Buffer.from(JSON.stringify({
+    deviceId,
+    email,
+    exp: expVitalicia,
+    signature: sigVitalicia
+  })).toString('base64');
+
+  const resVitalicia = await validarTokenLicencia(tokenVitalicia, deviceId);
+  assert.equal(resVitalicia.valido, true);
+  assert.equal(resVitalicia.payload.isPerpetual, true, 'Licencia con 9999 días de Halterofilia debe considerarse vitalicia');
+});
+
+test('SDD 003: Separación estricta de responsabilidades (index.html emite REQ y valida, sin generador administrativo)', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+  // El cliente emite la solicitud REQ y tiene los inputs de activación
+  assert.ok(html.includes('id="lock-cadena-solicitud"'), 'index.html debe emitir la cadena de solicitud en lock');
+  assert.ok(html.includes('id="info-cadena-solicitud"'), 'index.html debe emitir la cadena de solicitud en info');
+  assert.ok(html.includes('id="input-activation-token-lock"'), 'index.html debe recibir tokens en lock');
+  assert.ok(html.includes('id="input-activation-token-info"'), 'index.html debe recibir tokens en info');
+
+  // El cliente NO contiene el generador administrativo (debe residir en la app externa Halterofilia)
+  assert.ok(!html.includes('id="admin-gen-input-req"'), 'index.html NO debe contener el generador administrativo admin-gen-input-req');
+  assert.ok(!html.includes('handleAdminGenerateToken'), 'index.html NO debe invocar handleAdminGenerateToken');
+});
+
+
 
 
 

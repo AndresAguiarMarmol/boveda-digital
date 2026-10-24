@@ -390,6 +390,47 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      // 4b. POST /api/v1/license/generate (Emisión Administrativa Externa de Tokens de Activación)
+      if (pathname === '/api/v1/license/generate' && req.method === 'POST') {
+        const body = await parseJSONBody(req);
+        let deviceId = body.deviceId;
+        let email = body.email;
+        let dias = body.diasValidez !== undefined ? parseInt(body.diasValidez, 10) : 365;
+
+        if (body.cadenaSolicitud) {
+          const partes = body.cadenaSolicitud.trim().split('|');
+          if (partes.length >= 3 && partes[0].toUpperCase() === 'REQ') {
+            deviceId = partes[1].trim();
+            email = partes[2].trim();
+          }
+        }
+
+        if (!deviceId || !email) {
+          return sendJSON(res, 400, { error: 'Faltan parámetros deviceId o email (o cadenaSolicitud formato REQ|<DeviceID>|<correo>)' });
+        }
+
+        const LICENSE_SALT = 'Halterofilia-SuperSecret-Salt-2026';
+        const dId = deviceId.trim().toLowerCase();
+        const mail = email.trim().toLowerCase();
+        const exp = dias === -1 ? -1 : (Date.now() + dias * 24 * 60 * 60 * 1000);
+        const canonicalData = `${dId}|${mail}|${exp}|${LICENSE_SALT}`;
+        const signature = crypto.createHash('sha256').update(canonicalData, 'utf8').digest('hex');
+
+        const payload = {
+          deviceId: dId,
+          email: mail,
+          exp: exp,
+          signature: signature
+        };
+
+        const token = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+        return sendJSON(res, 200, {
+          success: true,
+          token,
+          payload
+        });
+      }
+
       // --- Middleware de Autenticación para Endpoints Protegidos ---
       const token = extractBearerToken(req);
       const authUser = token ? verifyJWT(token) : null;

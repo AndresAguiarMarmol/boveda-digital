@@ -267,4 +267,19 @@ test('Servidor API: Inicialización y Suite de Endpoints', async (t) => {
     });
     assert.equal(deleteAgainRes.status, 404);
   });
+
+  await t.test('POST /api/v1/license/generate: genera token de activación compatible desde endpoint administrativo', async () => {
+    const res = await makeRequest(
+      '/api/v1/license/generate',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { cadenaSolicitud: 'REQ|dev_backend_test|admin@halterofilia.com', diasValidez: 365 }
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.success, true);
+    assert.ok(res.body.token, 'Debe devolver el token Base64');
+    assert.equal(res.body.payload.deviceId, 'dev_backend_test');
+    assert.equal(res.body.payload.email, 'admin@halterofilia.com');
+  });
 });
+

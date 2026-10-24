@@ -30,25 +30,16 @@ function generarCadenaSolicitud(deviceId, email) {
 }
 
 /**
- * Computa la firma criptográfica SHA-256 de un payload de licencia
- * Concatenación canónica: "${deviceId}:${email}:${exp}:${salt}"
- * @param {string} deviceId 
- * @param {string} email 
- * @param {number|string} exp Timestamp de expiración o -1 para licencia perpetua
- * @param {string} [salt] Sal maestra
- * @returns {Promise<string>} Hash hexadecimal SHA-256
+ * Computa el hash SHA-256 de una cadena UTF-8
+ * @param {string} rawStr
+ * @returns {Promise<string>} Hash hexadecimal de 64 caracteres
  */
-async function computarFirmaLicencia(deviceId, email, exp, salt = LICENSE_SALT) {
-  const dId = (deviceId || '').trim().toLowerCase();
-  const mail = (email || '').trim().toLowerCase();
-  const expVal = (exp !== undefined && exp !== null) ? exp.toString().trim() : '-1';
-  const canonicalData = `${dId}:${mail}:${expVal}:${salt}`;
-
-  // Entorno Node.js (Pruebas unitarias)
+async function computarHashSHA256(rawStr) {
+  // Entorno Node.js (Pruebas unitarias y scripts de backend)
   if (typeof process !== 'undefined' && process.versions && process.versions.node) {
     try {
       const cryptoNode = require('node:crypto');
-      return cryptoNode.createHash('sha256').update(canonicalData, 'utf8').digest('hex');
+      return cryptoNode.createHash('sha256').update(rawStr, 'utf8').digest('hex');
     } catch (e) {
       // Continuar a fallback
     }
@@ -57,13 +48,31 @@ async function computarFirmaLicencia(deviceId, email, exp, salt = LICENSE_SALT) 
   // Entorno Navegador (Web Crypto API)
   if (typeof crypto !== 'undefined' && crypto.subtle) {
     const encoder = new TextEncoder();
-    const dataBuffer = encoder.encode(canonicalData);
+    const dataBuffer = encoder.encode(rawStr);
     const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
   throw new Error('No hay motor criptográfico disponible para computar firma de licencia.');
+}
+
+/**
+ * Computa la firma criptográfica SHA-256 de un payload de licencia
+ * Concatenación canónica estándar: "${deviceId}|${email}|${exp}|${salt}" (100% compatible con generador de Halterofilia)
+ * @param {string} deviceId 
+ * @param {string} email 
+ * @param {number|string} exp Timestamp de expiración o -1 para licencia perpetua
+ * @param {string} [salt] Sal maestra
+ * @param {string} [delimiter] Delimitador (| o :)
+ * @returns {Promise<string>} Hash hexadecimal SHA-256
+ */
+async function computarFirmaLicencia(deviceId, email, exp, salt = LICENSE_SALT, delimiter = '|') {
+  const dId = (deviceId || '').trim().toLowerCase();
+  const mail = (email || '').trim().toLowerCase();
+  const expVal = (exp !== undefined && exp !== null) ? exp.toString().trim() : '-1';
+  const canonicalData = `${dId}${delimiter}${mail}${delimiter}${expVal}${delimiter}${salt}`;
+  return await computarHashSHA256(canonicalData);
 }
 
 /**
@@ -162,6 +171,7 @@ async function validarTokenLicencia(tokenBase64, currentDeviceId = null, salt = 
   }
 
   const dId = (deviceId || '').trim().toLowerCase();
+  const mail = (email || '').trim().toLowerCase();
   const curDevId = (currentDeviceId || '').trim().toLowerCase();
 
   // 1. Validar vinculación con el dispositivo receptor (insensible a mayúsculas/minúsculas)
@@ -172,16 +182,41 @@ async function validarTokenLicencia(tokenBase64, currentDeviceId = null, salt = 
     };
   }
 
-  // 2. Validar expiración temporal (si exp !== -1)
+  // 2. Validar expiración temporal (si exp !== -1 y no es perpetua por días altos como 9999)
   const expNum = typeof exp === 'string' ? parseInt(exp, 10) : exp;
-  if (expNum !== -1 && expNum < Date.now()) {
+  const isPerpetual = expNum === -1 || expNum >= (Date.now() + 2500 * 24 * 60 * 60 * 1000);
+  if (!isPerpetual && expNum < Date.now()) {
     const expDate = new Date(expNum).toLocaleDateString('es-ES');
     return { valido: false, error: `Esta licencia expiró el ${expDate}.` };
   }
 
-  // 3. Validar autenticidad de la firma SHA-256 offline
-  const expectedSig = await computarFirmaLicencia(deviceId, email, exp, salt);
-  if (signature.trim().toLowerCase() !== expectedSig.trim().toLowerCase()) {
+  // 3. Validar autenticidad de la firma SHA-256 offline (compatible con Halterofilia y Bóveda Digital)
+  const expVal = (exp !== undefined && exp !== null) ? exp.toString().trim() : '-1';
+  const rawDevId = (deviceId || '').trim();
+  const rawEmail = (email || '').trim();
+
+  // Candidatos de firma admitidos:
+  // 1. Estándar Halterofilia con pipes normalizados (${dId}|${mail}|${expVal}|${salt})
+  // 2. Estándar Halterofilia con pipes literales (${rawDevId}|${rawEmail}|${expVal}|${salt})
+  // 3. Formato canónico con dos puntos (${dId}:${mail}:${expVal}:${salt})
+  // 4. Formato literal con dos puntos (${rawDevId}:${rawEmail}:${expVal}:${salt})
+  const candidateSignatures = [
+    await computarHashSHA256(`${dId}|${mail}|${expVal}|${salt}`),
+    await computarHashSHA256(`${rawDevId}|${rawEmail}|${expVal}|${salt}`),
+    await computarHashSHA256(`${dId}:${mail}:${expVal}:${salt}`),
+    await computarHashSHA256(`${rawDevId}:${rawEmail}:${expVal}:${salt}`)
+  ];
+
+  if (payload.expiryDate) {
+    const expDateVal = payload.expiryDate.toString().trim();
+    candidateSignatures.push(await computarHashSHA256(`${dId}|${mail}|${expDateVal}|${salt}`));
+    candidateSignatures.push(await computarHashSHA256(`${rawDevId}|${rawEmail}|${expDateVal}|${salt}`));
+  }
+
+  const sigClean = signature.trim().toLowerCase();
+  const isSignatureValid = candidateSignatures.some(cand => cand.toLowerCase() === sigClean);
+
+  if (!isSignatureValid) {
     return { valido: false, error: 'Firma criptográfica inválida. El token ha sido alterado o es apócrifo.' };
   }
 
@@ -191,8 +226,8 @@ async function validarTokenLicencia(tokenBase64, currentDeviceId = null, salt = 
       deviceId: dId,
       email: (email || '').trim().toLowerCase(),
       exp: expNum,
-      isPerpetual: expNum === -1,
-      expirationDate: expNum === -1 ? 'Perpetua' : new Date(expNum).toISOString()
+      isPerpetual: isPerpetual,
+      expirationDate: isPerpetual ? 'Perpetua' : new Date(expNum).toISOString()
     }
   };
 }

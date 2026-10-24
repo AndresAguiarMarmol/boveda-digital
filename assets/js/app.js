@@ -2561,11 +2561,13 @@ class BovedaApp {
 
     if (lic.isExpired && !lic.isLicensed) {
       const devEl = document.getElementById('lock-device-id');
+      const emailInput = document.getElementById('lock-user-email-input');
       const emailEl = document.getElementById('lock-user-email-display');
       const cadEl = document.getElementById('lock-cadena-solicitud');
       const errEl = document.getElementById('lock-activation-error');
 
       if (devEl) devEl.textContent = lic.deviceId;
+      if (emailInput && !emailInput.value) emailInput.value = lic.email;
       if (emailEl) emailEl.textContent = lic.email;
       if (cadEl) cadEl.value = lic.cadenaSolicitud;
       if (errEl) {
@@ -2598,6 +2600,7 @@ class BovedaApp {
     const statusBadge = document.getElementById('info-license-status-badge');
     const timeLeft = document.getElementById('info-license-time-left');
     const devId = document.getElementById('info-device-id');
+    const emailInput = document.getElementById('info-user-email-input');
     const cadena = document.getElementById('info-cadena-solicitud');
     const inputToken = document.getElementById('input-activation-token-info');
     const errEl = document.getElementById('info-activation-error');
@@ -2621,6 +2624,7 @@ class BovedaApp {
     }
 
     if (devId) devId.textContent = lic.deviceId;
+    if (emailInput) emailInput.value = lic.email;
     if (cadena) cadena.value = lic.cadenaSolicitud;
     if (inputToken) inputToken.value = '';
     if (errEl) {
@@ -2632,6 +2636,32 @@ class BovedaApp {
       modal.showModal();
     }
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Manejador reactivo cuando el usuario modifica su correo o usuario en el formulario de licencia
+   * @param {'lock'|'info'} origin
+   * @param {string} emailValue
+   */
+  handleLicenseEmailChange(origin, emailValue) {
+    if (!window.vaultLicense) return;
+    const clean = (emailValue || '').trim().toLowerCase();
+    window.vaultLicense.setUserEmail(clean);
+
+    // Sincronizar campo espejo en el otro modal si existe
+    const otherOrigin = origin === 'lock' ? 'info' : 'lock';
+    const otherInput = document.getElementById(`${otherOrigin}-user-email-input`);
+    if (otherInput && otherInput.value !== clean) {
+      otherInput.value = clean;
+    }
+    const emailDisplay = document.getElementById('lock-user-email-display');
+    if (emailDisplay) emailDisplay.textContent = clean;
+
+    const lic = window.vaultLicense.getEstadoLicencia(clean);
+    const cadenaEl = document.getElementById(`${origin}-cadena-solicitud`);
+    if (cadenaEl) cadenaEl.value = lic.cadenaSolicitud;
+    const otherCadenaEl = document.getElementById(`${otherOrigin}-cadena-solicitud`);
+    if (otherCadenaEl) otherCadenaEl.value = lic.cadenaSolicitud;
   }
 
   /**
@@ -2662,8 +2692,9 @@ class BovedaApp {
    */
   openWhatsAppSupport(origin = 'info') {
     if (!window.vaultLicense) return;
-    const user = window.vaultAuth?.currentUser;
-    const lic = window.vaultLicense.getEstadoLicencia(user?.email);
+    const emailInput = document.getElementById(`${origin}-user-email-input`);
+    const email = emailInput ? emailInput.value.trim() : (window.vaultAuth?.currentUser?.email || window.vaultLicense.userEmail);
+    const lic = window.vaultLicense.getEstadoLicencia(email);
     if (lic.whatsAppUrl) {
       window.open(lic.whatsAppUrl, '_blank');
     }
@@ -2690,8 +2721,9 @@ class BovedaApp {
     if (btn) btn.disabled = true;
 
     try {
-      const user = window.vaultAuth?.currentUser;
-      const res = await window.vaultLicense.activarConToken(token, user?.email);
+      const emailInput = document.getElementById(`${origin}-user-email-input`);
+      const email = emailInput ? emailInput.value.trim() : (window.vaultAuth?.currentUser?.email || window.vaultLicense.userEmail);
+      const res = await window.vaultLicense.activarConToken(token, email);
 
       if (!res.success) {
         if (errEl) {

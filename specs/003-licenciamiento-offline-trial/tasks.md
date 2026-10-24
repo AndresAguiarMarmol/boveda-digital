@@ -36,3 +36,9 @@
 - [x] **T6. Actualización obligatoria de `memory.md` y cierre de Spec.**
   - Registrar en `memory.md` (Sección 1, Sección 2 y Sección 3 con fecha de hoy) la arquitectura de licenciamiento offline y reglas de negocio.
   - Marcar tareas completadas en `tasks.md` y actualizar estado a `implementada` en `spec.md`.
+
+- [x] **T7. Generación automática de usuario e interactividad en Cadena de Solicitud.**
+  - Generar automáticamente `this.userEmail` (`usuario_<shortId>@boveda.com`) en la primera ejecución con persistencia dual (`IndexedDB` + `localStorage`).
+  - Incorporar inputs editables `#lock-user-email-input` y `#info-user-email-input` con manejador `handleLicenseEmailChange` para actualizar en tiempo real la cadena de solicitud y el mensaje de WhatsApp.
+  - Sincronizar automáticamente el usuario al iniciar sesión en `auth.js`.
+  - Añadir pruebas unitarias específicas y verificar 44/44 tests pasando.

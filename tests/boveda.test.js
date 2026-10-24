@@ -786,7 +786,40 @@ test('SDD 003: Componentes de UI en index.html, app.js y sw.js para Spec 003', (
   // 3. Validar sw.js
   const sw = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
   assert.ok(sw.includes('./assets/js/license.js'), 'sw.js debe cachear license.js');
+
+  // 4. Validar inputs interactivos de usuario/correo en index.html y app.js
+  assert.ok(html.includes('id="lock-user-email-input"'), 'index.html debe incluir lock-user-email-input');
+  assert.ok(html.includes('id="info-user-email-input"'), 'index.html debe incluir info-user-email-input');
+  assert.ok(appJs.includes('handleLicenseEmailChange'), 'app.js debe implementar handleLicenseEmailChange');
 });
+
+test('SDD 003: Generación automática de usuario y presencia obligatoria en la Cadena de Solicitud', async () => {
+  const manager = new VaultLicenseManager();
+  // Simular inicio sin usuario previo ni localStorage
+  await manager.init();
+
+  // Debe haberse generado un usuario asociado por defecto al dispositivo
+  assert.ok(manager.userEmail, 'VaultLicenseManager debe generar un usuario si no existe');
+  assert.ok(manager.userEmail.includes('@'), 'El usuario generado debe tener estructura válida');
+
+  // La cadena de solicitud sin pasar email debe incluir el usuario generado
+  const estado = manager.getEstadoLicencia();
+  assert.ok(estado.cadenaSolicitud.startsWith('REQ|dev_'), 'Cadena debe comenzar con REQ|dev_');
+  assert.ok(estado.cadenaSolicitud.includes(`|${manager.userEmail}`), 'Cadena debe incluir obligatoriamente el usuario generado');
+
+  // Actualización del usuario en tiempo real
+  await manager.setUserEmail('andres.movil@empresa.com');
+  assert.equal(manager.userEmail, 'andres.movil@empresa.com');
+
+  const estadoActualizado = manager.getEstadoLicencia();
+  assert.equal(estadoActualizado.cadenaSolicitud, `REQ|${manager.deviceId}|andres.movil@empresa.com`);
+  assert.ok(estadoActualizado.whatsAppUrl.includes(encodeURIComponent('REQ|' + manager.deviceId + '|andres.movil@empresa.com')));
+
+  // Función pura generarCadenaSolicitud
+  const cadenaDirecta = generarCadenaSolicitud(manager.deviceId, 'cliente@gmail.com');
+  assert.equal(cadenaDirecta, `REQ|${manager.deviceId}|cliente@gmail.com`);
+});
+
 
 
 

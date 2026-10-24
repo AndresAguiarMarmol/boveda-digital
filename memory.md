@@ -30,6 +30,7 @@ Registro de todo lo que debe preservarse entre sesiones de trabajo: arquitectura
   - `gdrive_token` / `gdrive_token_expiry`: Token de acceso efímero para operaciones con la Google Drive API (scope `drive.file`).
   - `gdrive_auto_sync`: Booleano de activación de la sincronización automática en segundo plano (debounced 1.5s).
   - `vault_device_id`: Identificador persistente y único del dispositivo (`dev_<uuid>`).
+  - `vault_user_email`: Usuario o correo asociado a la licencia, generado automáticamente (`usuario_<shortId>@boveda.com`) o ingresado interactivamente por el usuario, con persistencia dual (`IndexedDB` + `localStorage`).
   - `vault_trial_start`: Marca temporal en ms del primer arranque de la app para computar los 7 días de prueba.
   - `vault_license_token`: Token de activación Base64 verificado criptográficamente con `"Halterofilia-SuperSecret-Salt-2026"`.
   - `vault_license_data`: Metadatos de la licencia activa (`deviceId`, `email`, `exp`, `isPerpetual`).
@@ -70,8 +71,8 @@ Compatible con el backend centralizado de la app de Halterofilia:
 - **Aislamiento de Entorno de Pruebas y Sanitización de Payloads:** Las pruebas automatizadas operan con `process.env.NO_DISK_PERSIST = 'true'`, evitando la contaminación de `data/vault_cloud.json`. Todos los métodos de importación, sincronización y serialización utilizan `esPayloadCifradoValido(doc)` para descartar registros corruptos o placeholders de tests, preservando exclusivamente documentos con payloads AES-256-GCM auténticos.
 - **Sistema de Licenciamiento y Seguridad Offline (Spec 003 / AGENTS.md 4.1):**
   - *Período de Prueba (Trial):* 7 días continuos (`TRIAL_DAYS = 7`, `604,800,000 ms`) desde la primera apertura del dispositivo.
-  - *Device ID Único:* Generado de forma persistente (`dev_<uuid>`) y almacenado con persistencia dual (`IndexedDB` + `localStorage`).
-  - *Cadena de Solicitud:* `REQ|<DeviceID>|<correo>` con botones de copia rápida y contacto directo vía WhatsApp a `+56933395447`.
+  - *Device ID Único y Usuario Asociado:* Generados de forma persistente (`dev_<uuid>` y `usuario_<shortId>@boveda.com` o correo ingresado) y resguardados con persistencia dual (`IndexedDB` + `localStorage`).
+  - *Cadena de Solicitud Interactiva:* `REQ|<DeviceID>|<usuario>` con edición y sincronización reactiva en tiempo real en los modales `#modal-trial-lock` y `#modal-license-info`, copiado en 1 toque y enlace directo a WhatsApp `+56933395447`.
   - *Token de Activación:* Cadena Base64 con payload estructurado `{ deviceId, email, exp, signature }`.
   - *Firma Criptográfica SHA-256:* Computada de forma canónica sobre `${deviceId}:${email}:${exp}:${salt}` con sal fija `"Halterofilia-SuperSecret-Salt-2026"`, validable 100% offline mediante Web Crypto API (`crypto.subtle`).
   - *Bloqueo Estricto No Eludible:* Al expirar los 7 días sin licencia activa, el overlay `#modal-trial-lock` bloquea la interacción con la aplicación impidiendo eludir la pantalla hasta ingresar un token válido.
@@ -90,6 +91,17 @@ Compatible con el backend centralizado de la app de Halterofilia:
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-24 — Spec 003: Generación Automática de Usuario e Inclusión Reactiva en la Cadena de Solicitud de Licencia
+- **Generación y Persistencia Dual del Usuario (`assets/js/license.js`):**
+  - Implementada la generación automática de un usuario asociado legible (`usuario_<shortId>@boveda.com`) si el dispositivo no posee sesión activa ni registro previo, persistido dualmente en `IndexedDB` y `localStorage` (`vault_user_email`).
+  - Añadido el método `setUserEmail(email)` que sincroniza y valida el usuario activo ante cambios de sesión o edición en caliente.
+  - `generarCadenaSolicitud(deviceId, email)` ahora toma de forma transparente el usuario generado/guardado si no se proporciona explícitamente.
+- **Interfaz Interactiva y Sincronización en Tiempo Real (`index.html`, `assets/js/app.js`):**
+  - En `#modal-trial-lock` y `#modal-license-info`: reemplazado el campo estático por inputs interactivos editables (`#lock-user-email-input`, `#info-user-email-input`).
+  - Implementado `handleLicenseEmailChange(origin, value)`: al modificar el usuario o correo en pantalla, la Cadena de Solicitud (`REQ|<DeviceID>|<usuario>`), el botón de copiado y el enlace directo de WhatsApp se actualizan reactivamente al instante.
+  - Sincronización automática de `setUserEmail` al iniciar sesión en `auth.js` (online y offline).
+- **Suite de Pruebas Unitarias:** 44/44 pruebas pasando 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
 
 ### 2026-10-24 — Spec 003: Sistema de Licenciamiento y Seguridad Offline (Trial 7 Días y Activación Criptográfica SHA-256)
 - **Implementación del Módulo Criptográfico de Licencias (`assets/js/license.js`):**

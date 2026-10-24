@@ -19,7 +19,13 @@ const CONTACT_PHONE = "+56933395447";
  */
 function generarCadenaSolicitud(deviceId, email) {
   const dId = (deviceId || 'dev_unknown').trim();
-  const mail = (email || 'usuario@boveda.com').trim().toLowerCase();
+  let mail = (email || '').trim().toLowerCase();
+  if (!mail && typeof window !== 'undefined' && window.vaultLicense?.userEmail) {
+    mail = window.vaultLicense.userEmail.toLowerCase();
+  }
+  if (!mail) {
+    mail = 'usuario@boveda.com';
+  }
   return `REQ|${dId}|${mail}`;
 }
 
@@ -166,6 +172,7 @@ async function validarTokenLicencia(tokenBase64, currentDeviceId = null, salt = 
 class VaultLicenseManager {
   constructor() {
     this.deviceId = null;
+    this.userEmail = null;
     this.trialStartDate = null;
     this.licenseData = null;
     this.isLicensed = false;
@@ -198,7 +205,31 @@ class VaultLicenseManager {
     }
     this.deviceId = devId;
 
-    // 2. Resolver o inicializar fecha de inicio del Trial (7 días)
+    // 2. Resolver o generar el Usuario Asociado persistente
+    let userEmail = null;
+    if (typeof localStorage !== 'undefined') {
+      userEmail = localStorage.getItem('vault_user_email');
+    }
+    if (!userEmail && typeof window !== 'undefined' && window.vaultStorage) {
+      userEmail = await window.vaultStorage.getSetting('vault_user_email');
+    }
+    if (!userEmail && typeof window !== 'undefined' && window.vaultAuth?.currentUser?.email) {
+      userEmail = window.vaultAuth.currentUser.email;
+    }
+    if (!userEmail) {
+      // Generar usuario único y legible automáticamente para este dispositivo
+      const shortId = devId.replace('dev_', '').substring(0, 8);
+      userEmail = `usuario_${shortId}@boveda.com`;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('vault_user_email', userEmail);
+      }
+      if (typeof window !== 'undefined' && window.vaultStorage) {
+        await window.vaultStorage.setSetting('vault_user_email', userEmail);
+      }
+    }
+    this.userEmail = userEmail;
+
+    // 3. Resolver o inicializar fecha de inicio del Trial (7 días)
     let trialStart = null;
     if (typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem('vault_trial_start');
@@ -220,7 +251,7 @@ class VaultLicenseManager {
     }
     this.trialStartDate = trialStart;
 
-    // 3. Comprobar si existe un Token de Activación guardado
+    // 4. Comprobar si existe un Token de Activación guardado
     let savedToken = null;
     if (typeof localStorage !== 'undefined') {
       savedToken = localStorage.getItem('vault_license_token');
@@ -234,6 +265,9 @@ class VaultLicenseManager {
       if (validacion.valido) {
         this.isLicensed = true;
         this.licenseData = validacion.payload;
+        if (validacion.payload?.email) {
+          this.userEmail = validacion.payload.email;
+        }
         this.isTrialActive = false;
         this.isExpired = false;
         return this.getEstadoLicencia();
@@ -242,9 +276,27 @@ class VaultLicenseManager {
       }
     }
 
-    // 4. Evaluar vigencia del Período de Prueba de 7 días
+    // 5. Evaluar vigencia del Período de Prueba de 7 días
     this._recalcularEstadoTrial();
     return this.getEstadoLicencia();
+  }
+
+  /**
+   * Actualiza y persiste el usuario o correo asociado a la licencia
+   * @param {string} email 
+   */
+  async setUserEmail(email) {
+    if (!email || typeof email !== 'string') return;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return;
+    this.userEmail = cleanEmail;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('vault_user_email', cleanEmail);
+    }
+    if (typeof window !== 'undefined' && window.vaultStorage) {
+      await window.vaultStorage.setSetting('vault_user_email', cleanEmail);
+    }
+    return this.getEstadoLicencia(cleanEmail);
   }
 
   /**
@@ -282,7 +334,10 @@ class VaultLicenseManager {
     const daysRemaining = Math.ceil(msRemaining / (24 * 60 * 60 * 1000));
     const hoursRemaining = Math.ceil(msRemaining / (60 * 60 * 1000));
 
-    const effectiveEmail = email || (typeof window !== 'undefined' && window.vaultAuth?.currentUser?.email) || 'usuario@boveda.com';
+    const effectiveEmail = (email && email.trim().toLowerCase()) ||
+                           (typeof window !== 'undefined' && window.vaultAuth?.currentUser?.email) ||
+                           this.userEmail ||
+                           (this.deviceId ? `usuario_${this.deviceId.replace('dev_', '').substring(0, 8)}@boveda.com` : 'usuario@boveda.com');
     const cadena = generarCadenaSolicitud(this.deviceId, effectiveEmail);
 
     return {
@@ -318,6 +373,15 @@ class VaultLicenseManager {
 
     // Persistir token de activación
     this.licenseData = validacion.payload;
+    if (validacion.payload?.email) {
+      this.userEmail = validacion.payload.email.toLowerCase();
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('vault_user_email', this.userEmail);
+      }
+      if (typeof window !== 'undefined' && window.vaultStorage) {
+        await window.vaultStorage.setSetting('vault_user_email', this.userEmail);
+      }
+    }
     this.isLicensed = true;
     this.isTrialActive = false;
     this.isExpired = false;

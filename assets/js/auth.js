@@ -97,6 +97,9 @@ class VaultAuth {
           await window.vaultStorage.setSetting('userSalt', this.salt);
 
           await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'cloud' });
+          if (typeof window !== 'undefined' && window.vaultLicense) {
+            window.vaultLicense.setUserEmail(this.currentUser.email);
+          }
           return { success: true, user: this.currentUser, requiresPinSetup: !(await this.hasConfiguredPin()) };
         } else {
           const err = await response.json().catch(() => ({}));
@@ -143,6 +146,9 @@ class VaultAuth {
     await window.vaultStorage.setSetting('userSalt', this.salt);
 
     await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'local' });
+    if (typeof window !== 'undefined' && window.vaultLicense) {
+      window.vaultLicense.setUserEmail(this.currentUser.email);
+    }
     return { success: true, user: this.currentUser, requiresPinSetup: !(await this.hasConfiguredPin()) };
   }
 

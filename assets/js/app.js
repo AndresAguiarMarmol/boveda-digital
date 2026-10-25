@@ -2389,8 +2389,21 @@ class BovedaApp {
       if ((!rawDocs || rawDocs.length === 0) && this._pendingBackupData?.documents) {
         rawDocs = this._pendingBackupData.documents;
       }
+      if (!rawDocs || rawDocs.length === 0) {
+        rawDocs = await window.vaultStorage.getAllDocuments();
+      }
 
-      const validEncryptedDocs = rawDocs.filter(d => window.vaultStorage.esPayloadCifradoValido(d));
+      const isValido = (d) => {
+        if (window.vaultStorage && typeof window.vaultStorage.esPayloadCifradoValido === 'function') {
+          return window.vaultStorage.esPayloadCifradoValido(d);
+        }
+        if (typeof window.esPayloadCifradoValido === 'function') {
+          return window.esPayloadCifradoValido(d);
+        }
+        return !!(d && (d.encrypted_payload || d.encryptedPayload));
+      };
+
+      const validEncryptedDocs = rawDocs.filter(isValido);
 
       if (validEncryptedDocs.length === 0) {
         throw new Error('No se encontraron expedientes cifrados válidos para restaurar.');
@@ -2408,8 +2421,10 @@ class BovedaApp {
 
           for (const doc of validEncryptedDocs) {
             try {
-              const plain = await window.vaultCrypto.decrypt(doc.encryptedPayload, testKey);
-              if (plain && (plain.title || plain.category || plain.documentType)) {
+              const payload = doc.encrypted_payload || doc.encryptedPayload;
+              const iv = doc.iv;
+              const plain = await window.vaultCrypto.decrypt(testKey, payload, iv);
+              if (plain && (plain.title || plain.category || plain.documentType || typeof plain === 'object')) {
                 currentDecrypted.push({
                   id: doc.id,
                   originalDoc: doc,
@@ -2465,20 +2480,23 @@ class BovedaApp {
           fileData: plain.fileData || null,
           fileName: plain.fileName || null,
           fileMime: plain.fileMime || null,
-          createdAt: plain.createdAt || item.originalDoc.createdAt || new Date().toISOString(),
+          createdAt: plain.createdAt || item.originalDoc.createdAt || item.originalDoc.created_at || new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
 
-        const reEncrypted = await window.vaultCrypto.encrypt(payloadToEncrypt, activeMasterKey);
+        const reEncrypted = await window.vaultCrypto.encrypt(activeMasterKey, payloadToEncrypt);
         await window.vaultStorage.saveDocument({
           id: item.id,
-          userId: userId,
+          user_id: userId,
           category: payloadToEncrypt.category,
-          expirationDate: payloadToEncrypt.expirationDate,
-          isArchived: item.originalDoc.isArchived || false,
-          syncStatus: 'synced',
-          encryptedPayload: reEncrypted,
-          updatedAt: payloadToEncrypt.updatedAt
+          title: payloadToEncrypt.title,
+          encrypted_payload: reEncrypted.ciphertext,
+          iv: reEncrypted.iv,
+          checksum: reEncrypted.checksum,
+          expiry_date: payloadToEncrypt.expirationDate || null,
+          created_at: payloadToEncrypt.createdAt,
+          updated_at: payloadToEncrypt.updatedAt,
+          is_synced: false
         });
       }
 

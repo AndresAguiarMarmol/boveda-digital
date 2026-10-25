@@ -115,11 +115,23 @@ class VaultCrypto {
 
   /**
    * Cifra un objeto JSON o texto plano con AES-GCM
-   * @param {CryptoKey} key 
-   * @param {object|string} data 
+   * @param {CryptoKey|any} arg1 Clave o datos
+   * @param {object|string|CryptoKey} arg2 Datos o clave
    * @returns {Promise<{ ciphertext: string, iv: string, checksum: string }>}
    */
-  async encrypt(key, data) {
+  async encrypt(arg1, arg2) {
+    let key, data;
+    if (arg1 && typeof arg1 === 'object' && (arg1.algorithm || arg1.type === 'secret')) {
+      key = arg1;
+      data = arg2;
+    } else if (arg2 && typeof arg2 === 'object' && (arg2.algorithm || arg2.type === 'secret')) {
+      key = arg2;
+      data = arg1;
+    } else {
+      key = arg1;
+      data = arg2;
+    }
+
     const jsonString = typeof data === 'string' ? data : JSON.stringify(data);
     const enc = new TextEncoder();
     const encodedData = enc.encode(jsonString);
@@ -146,13 +158,46 @@ class VaultCrypto {
   }
 
   /**
-   * Descifra un payload cifrado con AES-GCM
-   * @param {CryptoKey} key 
-   * @param {string} ciphertextBase64 
-   * @param {string} ivBase64 
+   * Descifra un payload cifrado con AES-GCM (soporta orden polimórfico y objetos documento)
+   * @param {CryptoKey|any} arg1 Clave, documento o ciphertext
+   * @param {string|CryptoKey} arg2 Ciphertext o Clave
+   * @param {string} [arg3] IV en Base64
    * @returns {Promise<any>} Objeto original o texto
    */
-  async decrypt(key, ciphertextBase64, ivBase64) {
+  async decrypt(arg1, arg2, arg3) {
+    let key, ciphertextBase64, ivBase64;
+
+    // Caso 1: Firma estándar (key, ciphertext, iv)
+    if (arg1 && typeof arg1 === 'object' && (arg1.algorithm || arg1.type === 'secret')) {
+      key = arg1;
+      if (typeof arg2 === 'object' && arg2 !== null) {
+        ciphertextBase64 = arg2.encrypted_payload || arg2.encryptedPayload || arg2.ciphertext;
+        ivBase64 = arg2.iv || arg3;
+      } else {
+        ciphertextBase64 = arg2;
+        ivBase64 = arg3;
+      }
+    }
+    // Caso 2: Argumentos invertidos (doc o ciphertext, key, [iv])
+    else if (arg2 && typeof arg2 === 'object' && (arg2.algorithm || arg2.type === 'secret')) {
+      key = arg2;
+      if (typeof arg1 === 'object' && arg1 !== null) {
+        ciphertextBase64 = arg1.encrypted_payload || arg1.encryptedPayload || arg1.ciphertext;
+        ivBase64 = arg1.iv || arg3;
+      } else {
+        ciphertextBase64 = arg1;
+        ivBase64 = arg3;
+      }
+    } else {
+      key = arg1;
+      ciphertextBase64 = arg2;
+      ivBase64 = arg3;
+    }
+
+    if (!ciphertextBase64 || !ivBase64) {
+      throw new Error('Parámetros de descifrado insuficientes (ciphertext o IV faltante)');
+    }
+
     const encryptedBytes = this.base64ToBuffer(ciphertextBase64);
     const ivBytes = this.base64ToBuffer(ivBase64);
 

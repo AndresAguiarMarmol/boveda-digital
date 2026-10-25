@@ -610,14 +610,21 @@ test('SDD 002: esPayloadCifradoValido descarta registros espurios y acepta datos
     encrypted_payload: 'h9+Mv5yJkO1a+l5h7F9z0Bq2...'
   };
   assert.equal(esPayloadCifradoValido(docReal), true, 'Debe aceptar expedientes cifrados válidos');
+
+  // Caso 4: Exposición como método en instancia de VaultStorage
+  const { VaultStorage } = require('../assets/js/storage.js');
+  const storageInstance = new VaultStorage();
+  assert.equal(typeof storageInstance.esPayloadCifradoValido, 'function', 'VaultStorage debe exponer esPayloadCifradoValido como método');
+  assert.equal(storageInstance.esPayloadCifradoValido(docReal), true);
+  assert.equal(storageInstance.esPayloadCifradoValido(mockSpurio), false);
 });
 
-test('SDD 002: Service Worker v2, diálogo de PIN y manejadores en app.js e index.html', () => {
+test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js e index.html', () => {
   const rootDir = path.join(__dirname, '..');
 
-  // 1. sw.js debe ser v2 o v3
+  // 1. sw.js debe ser v2, v3 o v4
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3"), 'sw.js debe definir CACHE_NAME v2 o v3 para forzar actualización en celulares');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4"), 'sw.js debe definir CACHE_NAME v2, v3 o v4 para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');

@@ -12,6 +12,9 @@ class VaultStorage {
   }
 
   async _init() {
+    if (typeof indexedDB === 'undefined') {
+      return null;
+    }
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, this.version);
 
@@ -64,28 +67,46 @@ class VaultStorage {
    */
   async saveDocument(doc) {
     const db = await this.getDB();
+    const normalized = {
+      ...doc,
+      user_id: doc.user_id || doc.userId,
+      title: doc.title || (typeof doc.decryptedData?.title === 'string' ? doc.decryptedData.title : 'Documento Cifrado'),
+      category: doc.category || 'identidad',
+      encrypted_payload: doc.encrypted_payload || (typeof doc.encryptedPayload === 'string' ? doc.encryptedPayload : doc.encryptedPayload?.ciphertext),
+      iv: doc.iv || (doc.encryptedPayload && doc.encryptedPayload.iv) || 'default_iv',
+      checksum: doc.checksum || (doc.encryptedPayload && doc.encryptedPayload.checksum) || 'default_checksum',
+      expiry_date: doc.expiry_date || doc.expirationDate || null,
+      created_at: doc.created_at || doc.createdAt || new Date().toISOString(),
+      updated_at: doc.updated_at || doc.updatedAt || new Date().toISOString(),
+      is_synced: doc.is_synced !== undefined ? doc.is_synced : false
+    };
     return new Promise((resolve, reject) => {
       const tx = db.transaction('documents', 'readwrite');
       const store = tx.objectStore('documents');
-      const request = store.put(doc);
+      const request = store.put(normalized);
 
-      request.onsuccess = () => resolve(doc);
+      request.onsuccess = () => resolve(normalized);
       request.onerror = (e) => reject(e.target.error);
     });
   }
 
   /**
-   * Obtiene todos los documentos cifrados de un usuario
-   * @param {string} userId 
+   * Obtiene todos los documentos cifrados de un usuario (o todos si userId es null)
+   * @param {string} [userId] 
    * @returns {Promise<Array>}
    */
-  async getAllDocuments(userId) {
+  async getAllDocuments(userId = null) {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction('documents', 'readonly');
       const store = tx.objectStore('documents');
-      const index = store.index('user_id');
-      const request = index.getAll(userId);
+      let request;
+      if (userId) {
+        const index = store.index('user_id');
+        request = index.getAll(userId);
+      } else {
+        request = store.getAll();
+      }
 
       request.onsuccess = () => resolve(request.result || []);
       request.onerror = (e) => reject(e.target.error);
@@ -300,6 +321,15 @@ class VaultStorage {
   }
 
   /**
+   * Valida si un objeto documento posee un payload cifrado AES-256-GCM legítimo
+   * @param {object} doc
+   * @returns {boolean}
+   */
+  esPayloadCifradoValido(doc) {
+    return esPayloadCifradoValido(doc);
+  }
+
+  /**
    * Limpia toda la base de datos local (Cierre de sesión total / Borrado de bóveda)
    */
   async clearAll() {
@@ -314,6 +344,9 @@ class VaultStorage {
     });
   }
 }
+
+// Asignación explícita en prototype
+VaultStorage.prototype.esPayloadCifradoValido = esPayloadCifradoValido;
 
 // =============================================================================
 // FUNCIONES PURAS DE RESPALDO Y RECUPERACIÓN (Para Browser y Tests en Node.js)
@@ -396,6 +429,7 @@ function fusionarDocumentosBackup(docsActuales = [], docsBackup = []) {
 // Instancia global en navegador
 if (typeof window !== 'undefined') {
   window.vaultStorage = new VaultStorage();
+  window.vaultStorage.esPayloadCifradoValido = esPayloadCifradoValido;
   window.esPayloadCifradoValido = esPayloadCifradoValido;
   window.serializarBackupBoveda = serializarBackupBoveda;
   window.validarBackupBoveda = validarBackupBoveda;

@@ -93,6 +93,17 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-24 — Corrección de esPayloadCifradoValido en VaultStorage, Robustecimiento de Decrypt y Service Worker v4
+- **Causa Raíz:**
+  - Al ejecutar el asistente de descifrado interactivo de respaldo (`submitBackupPinUnlock`), se invocaba `window.vaultStorage.esPayloadCifradoValido(d)`, pero `esPayloadCifradoValido` solo existía como función pura y no como método en la clase `VaultStorage` ni en `window.vaultStorage`.
+  - Adicionalmente, `submitBackupPinUnlock` contenía llamadas con orden invertido de argumentos a `vaultCrypto.decrypt(doc.encryptedPayload, testKey)` y guardaba campos con convención camelCase en lugar de los atributos snake_case nativos de `IndexedDB`.
+- **Solución Implementada:**
+  - En [assets/js/storage.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/storage.js): Implementado el método `esPayloadCifradoValido(doc)` en la clase `VaultStorage`, en su `prototype` y en la instancia global `window.vaultStorage`.
+  - En [assets/js/crypto.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/crypto.js): Hecho `decrypt` y `encrypt` polimórficos, tolerando cualquier orden de argumentos e infiriendo `ciphertext` e `iv` directamente de objetos documento.
+  - En [assets/js/app.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/app.js): Corregido `submitBackupPinUnlock` con filtro defensivo, extracción explícita de `payload` e `iv`, y serialización consistente con el esquema de `IndexedDB`.
+  - En [sw.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/sw.js): Incrementada la versión de caché a `'boveda-digital-v4'` para asegurar que los navegadores móviles invaliden recursos cacheados.
+- **Suite de Pruebas Automatizadas:** 48/48 pruebas pasando al 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
+
 ### 2026-10-24 — Desacoplamiento del Generador de Tokens hacia la App Halterofilia y Compatibilidad Criptográfica Universal
 - **Separación Arquitectónica Estricta:**
   - El generador de tokens de activación fue removido de la interfaz cliente de Bóveda Digital (`index.html` y `assets/js/app.js`), cumpliendo con el principio de que los clientes solo emiten la Cadena de Solicitud (`REQ|<DeviceID>|<correo>`) y validan el token recibido.

@@ -103,7 +103,9 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - Implementado el método `setApiBaseUrl(url)` en `VaultAuth` con normalización automática de protocolo HTTPS y persistencia en `localStorage` (`boveda_api_base_url`).
   - Añadido el diálogo `#modal-cloud-sync` en `index.html` con comprobación de estado de conexión en vivo, exhibición de la URL activa, botón de sincronización manual (`handleCloudSyncNow`), prueba de conectividad (`testCloudConnection`), configuración de URL personalizada de Google Cloud Run (`saveCloudApiUrl`) y botón de restablecimiento automático (`resetCloudApiUrl`).
   - Permite a clientes PWA (como iPhones accediendo desde GitHub Pages o Safari) conectarse directamente a la instancia Cloud Run del usuario y sincronizar bidireccionalmente sus 13 expedientes.
-- **Suite de Pruebas Automatizadas:** 49/49 pruebas pasando 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
+- **Suite de Pruebas y Despliegue en Producción:**
+  - 49/49 pruebas pasando 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
+  - Desplegado exitosamente en Google Cloud Run activo 24/7 con HTTPS y certificado SSL automático en: `https://boveda-digital-17818053587.us-central1.run.app`. Todos los expedientes existentes y usuarios fueron verificados y responden en vivo.
 
 ### 2026-10-24 — Corrección de esPayloadCifradoValido en VaultStorage, Robustecimiento de Decrypt y Service Worker v4
 - **Causa Raíz:**

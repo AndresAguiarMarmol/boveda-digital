@@ -1,0 +1,12 @@
+{
+  "name": "boveda-digital",
+  "version": "1.0.0",
+  "description": "Bóveda Digital — Wallet de Documentos Segura con Cifrado Zero-Knowledge",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/boveda.test.js tests/server.test.js"
+  },
+  "author": "Andrés Aguiar",
+  "license": "ISC"
+}

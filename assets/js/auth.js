@@ -9,9 +9,16 @@
 
 class VaultAuth {
   constructor() {
-    let defaultBaseUrl = 'https://api.ecosistema.com';
+    const CLOUD_RUN_PROD_URL = 'https://boveda-digital-17818053587.us-central1.run.app';
+    let defaultBaseUrl = CLOUD_RUN_PROD_URL;
     if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-      defaultBaseUrl = window.location.origin;
+      const hostname = window.location.hostname;
+      // Si corre en localhost o 127.0.0.1, priorizar el servidor local; de lo contrario conectar con Cloud Run
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        defaultBaseUrl = window.location.origin;
+      } else {
+        defaultBaseUrl = window.location.origin.includes('run.app') ? window.location.origin : CLOUD_RUN_PROD_URL;
+      }
     }
     this.apiBaseUrl = localStorage.getItem('boveda_api_base_url') || defaultBaseUrl;
     this.isDemoMode = localStorage.getItem('boveda_demo_mode') === 'true'; // False por defecto para conectar con backend disponible
@@ -28,6 +35,7 @@ class VaultAuth {
    * @param {string|null} url URL del servidor en Google Cloud Run o similar
    */
   setApiBaseUrl(url) {
+    const CLOUD_RUN_PROD_URL = 'https://boveda-digital-17818053587.us-central1.run.app';
     if (url && typeof url === 'string' && url.trim().length > 0) {
       let cleanUrl = url.trim().replace(/\/+$/, '');
       if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
@@ -37,9 +45,14 @@ class VaultAuth {
       this.apiBaseUrl = cleanUrl;
     } else {
       localStorage.removeItem('boveda_api_base_url');
-      let defaultBaseUrl = 'https://api.ecosistema.com';
+      let defaultBaseUrl = CLOUD_RUN_PROD_URL;
       if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-        defaultBaseUrl = window.location.origin;
+        const hostname = window.location.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1') {
+          defaultBaseUrl = window.location.origin;
+        } else {
+          defaultBaseUrl = window.location.origin.includes('run.app') ? window.location.origin : CLOUD_RUN_PROD_URL;
+        }
       }
       this.apiBaseUrl = defaultBaseUrl;
     }

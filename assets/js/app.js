@@ -117,6 +117,15 @@ class BovedaApp {
       }
     }
 
+    // Comprobación inicial de conectividad en segundo plano con el servidor Cloud Run
+    if (window.vaultAuth) {
+      window.vaultAuth.checkServerConnection().then(isLive => {
+        this.updateCloudSyncUI(isLive ? 'synced' : 'offline');
+      }).catch(() => {
+        this.updateCloudSyncUI('offline');
+      });
+    }
+
     // Inicializar iconos
     if (window.lucide) {
       window.lucide.createIcons();
@@ -1371,77 +1380,98 @@ class BovedaApp {
 
         if (mime.startsWith('image/')) {
           attachmentContainer.innerHTML = `
-            <div class="rounded-2xl border border-emerald-500/30 bg-slate-950/80 p-3.5 shadow-2xl mt-3">
-              <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-white/10 text-xs text-slate-300">
-                <span class="flex items-center gap-1.5 font-semibold text-emerald-400">
-                  <i data-lucide="image" class="w-4 h-4"></i> Documento Digitalizado Original (${this.escapeHtml(doc.attachment.name)})
+            <div class="rounded-2xl border-2 border-emerald-500/40 bg-slate-950/90 p-4 shadow-2xl mt-1">
+              <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/10 text-xs text-slate-300">
+                <span class="flex items-center gap-2 font-bold text-emerald-400 text-sm">
+                  <i data-lucide="file-check" class="w-5 h-5"></i> Documento Digitalizado Oficial (${this.escapeHtml(doc.attachment.name)})
                 </span>
                 <div class="flex items-center gap-2">
-                  <a href="${this._currentObjectUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold inline-flex items-center gap-1 transition-colors text-xs">
-                    <i data-lucide="maximize-2" class="w-3 h-3"></i> Pantalla Completa
+                  <a href="${this._currentObjectUrl}" target="_blank" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold inline-flex items-center gap-1.5 transition-colors text-xs border border-cyan-500/30">
+                    <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i> Pantalla Completa
                   </a>
-                  <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold inline-flex items-center gap-1 transition-colors text-xs shadow-md shadow-emerald-500/20">
-                    <i data-lucide="download" class="w-3 h-3"></i> Descargar
+                  <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold inline-flex items-center gap-1.5 transition-colors text-xs shadow-md shadow-emerald-500/20">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i> Descargar
                   </button>
                 </div>
               </div>
-              <div class="flex justify-center p-3 bg-slate-900/60 rounded-xl overflow-hidden max-h-80 border border-white/5">
-                <img src="${this._currentObjectUrl}" alt="${this.escapeHtml(doc.title)}" class="max-h-72 w-auto object-contain rounded-lg shadow-lg hover:scale-[1.02] transition-transform cursor-pointer" onclick="window.open('${this._currentObjectUrl}', '_blank')" title="Haga clic para ver a tamaño completo" />
+              <div class="flex justify-center p-3 bg-slate-900/80 rounded-xl overflow-hidden border border-white/5 relative group">
+                <img src="${this._currentObjectUrl}" alt="${this.escapeHtml(doc.title)}" class="max-h-[460px] w-auto object-contain rounded-lg shadow-xl cursor-zoom-in transition-transform duration-300 hover:scale-[1.02]" onclick="window.open('${this._currentObjectUrl}', '_blank')" title="Haga clic para expandir a tamaño completo en nueva pestaña" />
+                <div class="absolute bottom-5 right-5 bg-slate-950/80 border border-white/20 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                  Clic para tamaño completo
+                </div>
               </div>
             </div>
           `;
         } else if (mime === 'application/pdf') {
           attachmentContainer.innerHTML = `
-            <div class="rounded-2xl border border-emerald-500/30 bg-slate-950/80 p-3.5 shadow-2xl mt-3">
-              <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-white/10 text-xs text-slate-300">
-                <span class="flex items-center gap-1.5 font-semibold text-emerald-400">
-                  <i data-lucide="file-text" class="w-4 h-4"></i> Documento PDF Oficial (${this.escapeHtml(doc.attachment.name)})
+            <div class="rounded-2xl border-2 border-emerald-500/40 bg-slate-950/90 p-4 shadow-2xl mt-1">
+              <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/10 text-xs text-slate-300">
+                <span class="flex items-center gap-2 font-bold text-emerald-400 text-sm">
+                  <i data-lucide="file-text" class="w-5 h-5"></i> Expediente PDF Oficial (${this.escapeHtml(doc.attachment.name)})
                 </span>
                 <div class="flex items-center gap-2">
-                  <a href="${this._currentObjectUrl}" target="_blank" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold inline-flex items-center gap-1 transition-colors text-xs">
-                    <i data-lucide="external-link" class="w-3 h-3"></i> Abrir en Pestaña
+                  <a href="${this._currentObjectUrl}" target="_blank" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold inline-flex items-center gap-1.5 transition-colors text-xs border border-cyan-500/30">
+                    <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Abrir en Pestaña
                   </a>
-                  <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold inline-flex items-center gap-1 transition-colors text-xs shadow-md shadow-emerald-500/20">
-                    <i data-lucide="download" class="w-3 h-3"></i> Descargar
+                  <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold inline-flex items-center gap-1.5 transition-colors text-xs shadow-md shadow-emerald-500/20">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i> Descargar
                   </button>
                 </div>
               </div>
-              <iframe src="${this._currentObjectUrl}#toolbar=0" class="w-full h-80 rounded-xl border border-white/10 bg-slate-900"></iframe>
+              <iframe src="${this._currentObjectUrl}#toolbar=1" class="w-full h-[480px] rounded-xl border border-white/10 bg-slate-900 shadow-inner"></iframe>
             </div>
           `;
         } else {
           attachmentContainer.innerHTML = `
-            <div class="p-4 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-between mt-3">
+            <div class="p-5 rounded-2xl bg-slate-900/90 border border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-1">
               <div class="flex items-center gap-3">
-                <div class="p-2.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                  <i data-lucide="file-check" class="w-5 h-5"></i>
+                <div class="p-3 rounded-xl bg-emerald-500/20 text-emerald-400">
+                  <i data-lucide="file-check" class="w-6 h-6"></i>
                 </div>
                 <div>
-                  <p class="text-sm font-semibold text-slate-200">${this.escapeHtml(doc.attachment.name)}</p>
-                  <p class="text-xs text-slate-400">Archivo Cifrado con AES-256 • ${doc.attachment.mimeType || 'Binario'}</p>
+                  <p class="text-sm font-bold text-slate-200">${this.escapeHtml(doc.attachment.name)}</p>
+                  <p class="text-xs text-slate-400">Archivo Cifrado con AES-256 • ${doc.attachment.mimeType || 'Documento Oficial'}</p>
                 </div>
               </div>
-              <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-3.5 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 inline-flex items-center gap-1.5 shadow-md shadow-emerald-500/20">
-                <i data-lucide="download" class="w-4 h-4"></i> Descargar Original
-              </button>
+              <div class="flex items-center gap-2">
+                <a href="${this._currentObjectUrl}" target="_blank" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs inline-flex items-center gap-1.5 transition-colors border border-cyan-500/30">
+                  <i data-lucide="external-link" class="w-4 h-4"></i> Abrir
+                </a>
+                <button type="button" onclick="window.bovedaApp.downloadDecryptedAttachment('${doc.id}')" class="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 inline-flex items-center gap-1.5 shadow-md shadow-emerald-500/20">
+                  <i data-lucide="download" class="w-4 h-4"></i> Descargar Original
+                </button>
+              </div>
             </div>
           `;
         }
       } catch (err) {
         console.error('[BovedaApp] Error al descifrar adjunto:', err);
         attachmentContainer.innerHTML = `
-          <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-center gap-2 mt-3">
-            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
-            <span>No se pudo descifrar la vista previa del archivo adjunto.</span>
+          <div class="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-center justify-between gap-3 mt-1">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="alert-triangle" class="w-5 h-5 shrink-0 text-rose-400"></i>
+              <span>No se pudo descifrar la vista previa del archivo adjunto con la clave activa.</span>
+            </div>
+            <button type="button" onclick="window.bovedaApp.openBackupPinPrompt()" class="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-semibold text-xs whitespace-nowrap">
+              Ingresar PIN de Respaldo
+            </button>
           </div>
         `;
       }
     } else {
       attachmentContainer.innerHTML = `
-        <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 text-xs text-slate-400 flex items-center justify-between mt-3">
-          <span class="italic">Este expediente no contiene imagen ni documento adjunto.</span>
-          <button type="button" onclick="window.bovedaApp.toggleEditDocumentMode(true)" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-emerald-400 font-semibold inline-flex items-center gap-1 text-xs">
-            <i data-lucide="paperclip" class="w-3 h-3"></i> Adjuntar ahora
+        <div class="p-5 rounded-2xl bg-slate-900/60 border border-dashed border-white/15 text-xs text-slate-300 flex flex-col sm:flex-row items-center justify-between gap-3 mt-1">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-slate-400">
+              <i data-lucide="file-question" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <p class="font-bold text-slate-200 text-sm">Sin Documento Físico Adjunto</p>
+              <p class="text-xs text-slate-400 mt-0.5">Este expediente contiene metadatos pero no tiene una imagen o PDF cargado.</p>
+            </div>
+          </div>
+          <button type="button" onclick="window.bovedaApp.toggleEditDocumentMode(true)" class="px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold inline-flex items-center gap-2 text-xs transition-colors whitespace-nowrap">
+            <i data-lucide="paperclip" class="w-4 h-4"></i> Adjuntar Documento Ahora
           </button>
         </div>
       `;

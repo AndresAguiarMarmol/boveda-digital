@@ -624,7 +624,7 @@ test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js 
 
   // 1. sw.js debe ser v2, v3 o v4
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5"), 'sw.js debe definir CACHE_NAME v2, v3, v4 o v5 para forzar actualización en celulares');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6"), 'sw.js debe definir CACHE_NAME v2, v3, v4, v5 o v6 para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1002,6 +1002,32 @@ test('SDD 004: Eliminación completa del esquema demo-free / demo-pro', () => {
   const appJs = fs.readFileSync(appPath, 'utf8');
   assert.ok(!appJs.includes('openUpgradeModal('), 'app.js NO debe invocar openUpgradeModal');
   assert.ok(!appJs.includes('processSimulatedProCheckout('), 'app.js NO debe contener checkout simulado');
+});
+
+test('SDD 005: Conexión Online con Cloud Run por defecto y visor prominente de documentos', () => {
+  const rootDir = path.join(__dirname, '..');
+  const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const serverJs = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
+
+  // 1. VaultAuth debe definir la URL oficial de Google Cloud Run por defecto
+  assert.ok(authJs.includes('https://boveda-digital-17818053587.us-central1.run.app'), 'auth.js debe configurar Cloud Run URL por defecto');
+  assert.ok(authJs.includes('CLOUD_RUN_PROD_URL'), 'auth.js debe declarar la constante CLOUD_RUN_PROD_URL');
+
+  // 2. Visor de documento original debe ubicarse antes de la credencial en index.html
+  const attachPos = html.indexOf('id="detail-attachment-preview"');
+  const cardPos = html.indexOf('id="detail-credential-card-container"');
+  assert.ok(attachPos > 0 && cardPos > 0, 'Ambos elementos deben existir en index.html');
+  assert.ok(attachPos < cardPos, 'El visor de documento (detail-attachment-preview) DEBE ubicarse antes de la credencial (detail-credential-card-container)');
+
+  // 3. app.js debe renderizar visor amplio para PDF (iframe con height) e imagen con clic a pantalla completa
+  assert.ok(appJs.includes('Documento Digitalizado Oficial'), 'app.js debe destacar el documento digitalizado');
+  assert.ok(appJs.includes('Expediente PDF Oficial'), 'app.js debe destacar el expediente PDF');
+  assert.ok(appJs.includes('cursor-zoom-in'), 'app.js debe permitir zoom/pantalla completa en imagen');
+
+  // 4. server.js debe reconocer al usuario de dispositivo atleta@halterofilia.com
+  assert.ok(serverJs.includes('atleta@halterofilia.com'), 'server.js debe reconocer usuario de dispositivo');
 });
 
 

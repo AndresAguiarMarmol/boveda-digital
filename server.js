@@ -43,6 +43,14 @@ const db = {
       passwordHash: hashPassword('PasswordSeguro123!'),
       fullName: 'Usuario Demo (Free)',
       plan: 'free'
+    },
+    {
+      id: 'usr_device_atleta',
+      email: 'atleta@halterofilia.com',
+      passwordHash: hashPassword('PasswordSeguro123!'),
+      fullName: 'Usuario de Dispositivo (Halterofilia)',
+      plan: 'pro',
+      cryptoSalt: 'ae8713595fed1e759db1062454187513'
     }
   ],
   documents: new Map(), // key: user_id, value: Array de docs cifrados

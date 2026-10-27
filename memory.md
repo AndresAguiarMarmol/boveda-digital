@@ -85,7 +85,9 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - Botón `#btn-header-user-profile` anclado en la barra horizontal (Navbar superior) exhibiendo el avatar (foto o icono de usuario) y el nombre del usuario registrado en tiempo real.
   - Diálogo accesible `#modal-user-profile` ("Perfil del Usuario Registrado") con previsualización circular de foto de perfil, botones de cámara móvil/web (`capture="user"`), galería de archivos y descarte de foto con redimensionamiento automático a 256x256 px en Canvas.
   - Campos estructurados: Nombre, Apellidos, Correo Electrónico y Teléfono de Contacto, con persistencia dual (`IndexedDB` + `localStorage`), sincronización reactiva de correo en la cadena `REQ|<DeviceID>|<correo>` y botón "Desvincular" para preparar el equipo para un nuevo registro.
-- **Service Worker v5 con Estrategia Network-First para Código Local:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v5'`, incorporando `license.js` a los recursos esenciales precacheados.
+- **Service Worker v6 con Estrategia Network-First para Código Local:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v6'`, incorporando mejoras de conectividad en línea y visualización superior de adjuntos.
+- **Conexión en Línea Prioritaria con Google Cloud Run (Spec 005):** `VaultAuth` adopta `https://boveda-digital-17818053587.us-central1.run.app` como endpoint REST por defecto cuando no se detecta backend en el mismo host local. El cliente comprueba proactivamente conectividad al iniciar y tras el desbloqueo del PIN, marcando 🟢 Nube / En Línea. El servidor reconoce limpiamente las credenciales de dispositivo (`atleta@halterofilia.com`).
+- **Presentación Prominente del Documento Digitalizado (Spec 005):** En el visor de expedientes `#modal-doc-detail`, el documento digitalizado real (imagen de alta definición con zoom o PDF interactivo embebido de 480px con descarga descifrada) se posiciona en la sección superior antes de los metadatos y la credencial decorativa, garantizando que el usuario acceda de inmediato al contenido del documento.
 - **Acceso 100% Offline:** Toda la información cifrada reside en `IndexedDB`, permitiendo consultar y crear documentos sin conexión a internet.
 - **Sincronización Cloud Bidireccional y Despliegue en Google Cloud Run:** La aplicación cuenta con sincronización bidireccional automática y manual (`batch-sync`, descarga remota y eliminación sincronizada `DELETE /api/v1/documents/:id`). Detecta automáticamente el origen del servidor, actualiza el indicador de estado en la UI (🟢 Sincronizado, 🟡 Sincronizando, ⚪ Offline) y se distribuye con `Dockerfile` nativo optimizado para despliegue en Google Cloud Run.
 - **Compatibilidad con Backend Existente (Halterofilia):** Utiliza autenticación REST sobre HTTPS con tokens JWT / OAuth2, refresh tokens rotativos y sesiones administradas en servidor.
@@ -97,6 +99,19 @@ Compatible con el backend centralizado de la app de Halterofilia:
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-27 — Spec 005: Conexión Online con Cloud Run por Defecto y Visor Prominente de Documentos
+- **Conexión en Línea Persistente (Online Status):**
+  - Configurada la URL oficial de Google Cloud Run (`https://boveda-digital-17818053587.us-central1.run.app`) como base por defecto en `VaultAuth` (`assets/js/auth.js`) cuando la app se carga desde orígenes remotos (GitHub Pages, PWA móvil) o sin servidor local directo.
+  - Implementada comprobación proactiva de conexión en `app.js` (`init()` y post-desbloqueo PIN) que actualiza de inmediato el indicador a 🟢 **Nube (Conectada y Protegida)**.
+  - Registrado el usuario de dispositivo `atleta@halterofilia.com` (`PasswordSeguro123!`) en `server.js` para asegurar autenticación exitosa contra la nube sin degradar erróneamente a offline.
+- **Presentación Prominente del Documento Original (Visor Superior):**
+  - Reorganizada la vista de lectura `#doc-read-view` en `index.html`: el contenedor `#detail-attachment-preview` se traslada a la primera posición superior destacada, seguido por los datos del expediente y la tarjeta de credencial decorativa al pie.
+  - Enriquecido el renderizado en `assets/js/app.js`: las imágenes disponen de previsualización ampliada con hover-zoom y botón a pantalla completa; los expedientes PDF incorporan visor embebido de 480px con toolbar y enlace directo a pestaña; los expedientes sin adjunto exhiben botón destacado para adjuntar/escanear documento digital en 1 toque.
+- **Service Worker v6 (`sw.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v6'` para forzar la actualización transparente en dispositivos móviles y clientes instalados.
+- **Suite de Pruebas Automatizadas:**
+  - 53/53 pruebas pasando 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
 
 ### 2026-10-27 — Spec 004: Eliminación de Esquema Demo Free/Pro, Adopción Plena de Licenciamiento Halterofilia y Módulo de Usuario
 - **Eliminación Completa de la Dicotomía Demo Free vs Pro (`index.html`, `assets/js/app.js`, `assets/js/auth.js`, `server.js`):**

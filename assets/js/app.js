@@ -112,6 +112,12 @@ class BovedaApp {
         await window.vaultLicense.init();
         this.updateLicenseUI();
         this.checkLicenseLock();
+
+        // Evaluar Identificación Obligatoria de Primer Uso (Spec 007)
+        const isVerified = await window.vaultLicense.isUserIdentifiedAndVerified();
+        if (!isVerified) {
+          this.openFirstRunOnboarding();
+        }
       } catch (errLic) {
         console.warn('[BovedaApp] Error al inicializar gestor de licencias:', errLic);
       }
@@ -2123,6 +2129,306 @@ class BovedaApp {
     this.updateLicenseUI();
     this.closeUserProfileModal();
     this.showToast('Usuario desvinculado con éxito.', 'info');
+    this.openFirstRunOnboarding();
+  }
+
+  /**
+   * Despliega la pantalla de identificación obligatoria de primer uso
+   */
+  async openFirstRunOnboarding() {
+    const modal = document.getElementById('modal-first-run-onboarding');
+    if (!modal) return;
+
+    this._onboardingPhoto = null;
+    const photoImg = document.getElementById('onboarding-photo-img');
+    const photoPl = document.getElementById('onboarding-photo-placeholder');
+    const btnRemove = document.getElementById('btn-onboarding-remove-photo');
+    if (photoImg) { photoImg.src = ''; photoImg.classList.add('hidden'); }
+    if (photoPl) photoPl.classList.remove('hidden');
+    if (btnRemove) btnRemove.classList.add('hidden');
+
+    if (window.vaultLicense) {
+      const prof = await window.vaultLicense.getUserProfile();
+      if (prof) {
+        const fn = document.getElementById('onboarding-first-name');
+        const ln = document.getElementById('onboarding-last-name');
+        const em = document.getElementById('onboarding-email');
+        const ph = document.getElementById('onboarding-phone');
+        if (fn && prof.firstName) fn.value = prof.firstName;
+        if (ln && prof.lastName) ln.value = prof.lastName;
+        if (em && prof.email) em.value = prof.email;
+        if (ph && prof.phone) ph.value = prof.phone;
+        if (prof.photo) {
+          this._onboardingPhoto = prof.photo;
+          if (photoImg) { photoImg.src = prof.photo; photoImg.classList.remove('hidden'); }
+          if (photoPl) photoPl.classList.add('hidden');
+          if (btnRemove) btnRemove.classList.remove('hidden');
+        }
+      }
+    }
+
+    this.showOnboardingStep(1);
+    if (!modal.open) {
+      modal.showModal();
+    }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Cambia el paso activo del modal de onboarding (1 o 2)
+   */
+  showOnboardingStep(step) {
+    const step1 = document.getElementById('onboarding-step-1');
+    const step2 = document.getElementById('onboarding-step-2');
+    if (step === 1) {
+      if (step1) step1.classList.remove('hidden');
+      if (step2) step2.classList.add('hidden');
+    } else {
+      if (step1) step1.classList.add('hidden');
+      if (step2) step2.classList.remove('hidden');
+      const otpInput = document.getElementById('onboarding-otp-input');
+      if (otpInput) {
+        otpInput.value = '';
+        setTimeout(() => otpInput.focus(), 100);
+      }
+    }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Maneja la captura de foto para el onboarding inicial
+   */
+  handleOnboardingPhotoCapture(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      this.showToast('Por favor selecciona un archivo de imagen válido.', 'warning');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 256;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height = Math.round(height * (MAX_SIZE / width));
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width = Math.round(width * (MAX_SIZE / height));
+            height = MAX_SIZE;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        this._onboardingPhoto = dataUrl;
+
+        const photoImg = document.getElementById('onboarding-photo-img');
+        const photoPlaceholder = document.getElementById('onboarding-photo-placeholder');
+        const removeBtn = document.getElementById('btn-onboarding-remove-photo');
+
+        if (photoImg && photoPlaceholder) {
+          photoImg.src = dataUrl;
+          photoImg.classList.remove('hidden');
+          photoPlaceholder.classList.add('hidden');
+          if (removeBtn) {
+            removeBtn.classList.remove('hidden');
+            removeBtn.classList.add('inline-flex');
+          }
+        }
+        if (window.lucide) window.lucide.createIcons();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /**
+   * Quita la foto de perfil en el onboarding
+   */
+  removeOnboardingPhoto() {
+    this._onboardingPhoto = null;
+    const photoImg = document.getElementById('onboarding-photo-img');
+    const photoPlaceholder = document.getElementById('onboarding-photo-placeholder');
+    const removeBtn = document.getElementById('btn-onboarding-remove-photo');
+
+    if (photoImg) { photoImg.src = ''; photoImg.classList.add('hidden'); }
+    if (photoPlaceholder) photoPlaceholder.classList.remove('hidden');
+    if (removeBtn) { removeBtn.classList.add('hidden'); removeBtn.classList.remove('inline-flex'); }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  /**
+   * Paso 1: Valida los campos de la ficha y despacha el código por email
+   */
+  async handleOnboardingSubmitStep1() {
+    const firstName = (document.getElementById('onboarding-first-name')?.value || '').trim();
+    const lastName = (document.getElementById('onboarding-last-name')?.value || '').trim();
+    const email = (document.getElementById('onboarding-email')?.value || '').trim().toLowerCase();
+    const phone = (document.getElementById('onboarding-phone')?.value || '').trim();
+
+    if (!firstName || !lastName || !email || !phone) {
+      this.showToast('Por favor completa todos los campos obligatorios de la ficha.', 'warning');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      this.showToast('Ingresa un correo electrónico con formato válido.', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('btn-onboarding-send-code');
+    const btnText = document.getElementById('btn-onboarding-send-text');
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.textContent = 'Enviando código...';
+
+    try {
+      const res = await window.vaultAuth.sendEmailVerificationCode(email, `${firstName} ${lastName}`);
+      if (!res.success) {
+        this.showToast(res.error || 'Error al enviar código de verificación', 'error');
+        if (btn) btn.disabled = false;
+        if (btnText) btnText.textContent = 'Continuar y Enviar Código Validador';
+        return;
+      }
+
+      this._pendingOnboardingProfile = {
+        firstName,
+        lastName,
+        email,
+        phone,
+        photo: this._onboardingPhoto || null
+      };
+
+      const targetEmailEl = document.getElementById('onboarding-verify-target-email');
+      if (targetEmailEl) targetEmailEl.textContent = email;
+
+      const simAlert = document.getElementById('onboarding-simulated-code-alert');
+      const simVal = document.getElementById('onboarding-simulated-code-val');
+      if (res.simulated && res.code && simAlert && simVal) {
+        simVal.textContent = res.code;
+        simAlert.classList.remove('hidden');
+      } else if (simAlert) {
+        simAlert.classList.add('hidden');
+      }
+
+      this.showOnboardingStep(2);
+      this.showToast(`Código validador enviado a ${email}`, 'success');
+    } catch (err) {
+      console.error('[Onboarding] Error:', err);
+      this.showToast('Ocurrió un error al contactar el servicio de validación.', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+      if (btnText) btnText.textContent = 'Continuar y Enviar Código Validador';
+    }
+  }
+
+  /**
+   * Paso 2: Valida el código de 6 dígitos ingresado y activa el perfil
+   */
+  async handleOnboardingSubmitStep2() {
+    if (!this._pendingOnboardingProfile) {
+      this.showOnboardingStep(1);
+      return;
+    }
+
+    const otpInput = document.getElementById('onboarding-otp-input');
+    const code = (otpInput?.value || '').trim();
+
+    if (!code || code.length !== 6) {
+      this.showToast('El código validador debe contener exactamente 6 dígitos numéricos.', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('btn-onboarding-verify');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="inline-block animate-spin mr-2">⏳</span> Validando código...';
+    }
+
+    try {
+      const res = await window.vaultAuth.verifyEmailCode(this._pendingOnboardingProfile.email, code);
+      if (!res.success || !res.verified) {
+        this.showToast(res.error || 'Código incorrecto o expirado.', 'error');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4"></i><span>Validar Código y Acceder a la Bóveda</span>';
+          if (window.lucide) window.lucide.createIcons();
+        }
+        return;
+      }
+
+      // Guardar perfil y persistir verificación
+      if (window.vaultLicense) {
+        await window.vaultLicense.saveUserProfile(this._pendingOnboardingProfile);
+        await window.vaultLicense.markUserVerified(true);
+        await window.vaultLicense.setUserEmail(this._pendingOnboardingProfile.email);
+      }
+
+      const modal = document.getElementById('modal-first-run-onboarding');
+      if (modal) modal.close();
+
+      this.showToast('¡Identificación confirmada y correo verificado con éxito!', 'success');
+      await this.renderHeaderUserProfile();
+      this.updateLicenseUI();
+
+      // Proseguir con el flujo de inicialización de la app
+      const hasPin = await window.vaultAuth.hasConfiguredPin();
+      if (hasPin) {
+        this.switchView('pin-lock');
+      } else {
+        this.switchView('pin-setup');
+      }
+    } catch (err) {
+      console.error('[Onboarding] Error al verificar código:', err);
+      this.showToast('Error al validar el código.', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4"></i><span>Validar Código y Acceder a la Bóveda</span>';
+        if (window.lucide) window.lucide.createIcons();
+      }
+    }
+  }
+
+  /**
+   * Reenvía el código validador al correo del paso 1
+   */
+  async handleOnboardingResendCode() {
+    if (!this._pendingOnboardingProfile) {
+      this.showOnboardingStep(1);
+      return;
+    }
+
+    const { email, firstName, lastName } = this._pendingOnboardingProfile;
+    const res = await window.vaultAuth.sendEmailVerificationCode(email, `${firstName} ${lastName}`);
+    if (res.success) {
+      const simAlert = document.getElementById('onboarding-simulated-code-alert');
+      const simVal = document.getElementById('onboarding-simulated-code-val');
+      if (res.simulated && res.code && simAlert && simVal) {
+        simVal.textContent = res.code;
+        simAlert.classList.remove('hidden');
+      }
+      this.showToast('Nuevo código validador despachado a tu correo.', 'info');
+    } else {
+      this.showToast(res.error || 'No se pudo reenviar el código.', 'error');
+    }
+  }
+
+  /**
+   * Vuelve al paso 1 del onboarding para corregir datos o correo
+   */
+  handleOnboardingBackToStep1() {
+    this.showOnboardingStep(1);
   }
 
   /**

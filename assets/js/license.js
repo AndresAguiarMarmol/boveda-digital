@@ -244,6 +244,7 @@ class VaultLicenseManager {
     this.isLicensed = false;
     this.isTrialActive = true;
     this.isExpired = false;
+    this.userVerified = false;
   }
 
   /**
@@ -345,7 +346,17 @@ class VaultLicenseManager {
       }
     }
 
-    // 5. Evaluar vigencia del Período de Prueba de 7 días
+    // 5. Cargar estado de usuario verificado
+    let isVerif = false;
+    if (typeof localStorage !== 'undefined') {
+      isVerif = localStorage.getItem('vault_user_verified') === 'true';
+    }
+    if (!isVerif && typeof window !== 'undefined' && window.vaultStorage) {
+      isVerif = (await window.vaultStorage.getSetting('vault_user_verified')) === true;
+    }
+    this.userVerified = isVerif;
+
+    // 6. Evaluar vigencia del Período de Prueba de 7 días
     this._recalcularEstadoTrial();
     return this.getEstadoLicencia();
   }
@@ -445,7 +456,56 @@ class VaultLicenseManager {
     const shortId = (this.deviceId || 'dev_unknown').replace('dev_', '').substring(0, 8);
     const defaultEmail = `usuario_${shortId}@boveda.com`;
     await this.setUserEmail(defaultEmail);
+
+    this.userVerified = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('vault_user_verified');
+    }
+    if (typeof window !== 'undefined' && window.vaultStorage) {
+      await window.vaultStorage.setSetting('vault_user_verified', false);
+    }
     return true;
+  }
+
+  /**
+   * Determina si el usuario ya completó la identificación de su ficha y verificó su correo
+   * @returns {Promise<boolean>}
+   */
+  async isUserIdentifiedAndVerified() {
+    const profile = await this.getUserProfile();
+    const hasRequiredFields = profile && 
+      Boolean(profile.firstName && profile.firstName.trim()) &&
+      Boolean(profile.lastName && profile.lastName.trim()) &&
+      Boolean(profile.email && profile.email.trim()) &&
+      Boolean(profile.phone && profile.phone.trim());
+
+    if (!hasRequiredFields) return false;
+
+    if (this.userVerified) return true;
+
+    let verified = false;
+    if (typeof localStorage !== 'undefined') {
+      verified = localStorage.getItem('vault_user_verified') === 'true';
+    }
+    if (!verified && typeof window !== 'undefined' && window.vaultStorage) {
+      verified = (await window.vaultStorage.getSetting('vault_user_verified')) === true;
+    }
+    this.userVerified = verified;
+    return verified;
+  }
+
+  /**
+   * Marca el estado de verificación del usuario
+   * @param {boolean} verified 
+   */
+  async markUserVerified(verified = true) {
+    this.userVerified = verified;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('vault_user_verified', verified ? 'true' : 'false');
+    }
+    if (typeof window !== 'undefined' && window.vaultStorage) {
+      await window.vaultStorage.setSetting('vault_user_verified', verified);
+    }
   }
 
   /**

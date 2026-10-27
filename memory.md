@@ -35,6 +35,7 @@ Registro de todo lo que debe preservarse entre sesiones de trabajo: arquitectura
   - `vault_license_token`: Token de activación Base64 verificado criptográficamente con `"Halterofilia-SuperSecret-Salt-2026"`.
   - `vault_license_data`: Metadatos de la licencia activa (`deviceId`, `email`, `exp`, `isPerpetual`).
   - `vault_user_profile`: Objeto JSON del perfil del usuario registrado por dispositivo (`firstName`, `lastName`, `email`, `phone`, `photo`, `updatedAt`).
+  - `vault_user_verified`: Booleano que indica si el usuario completó la identificación obligatoria de su ficha y verificó su correo electrónico mediante el código OTP.
 
 - **Almacén `audit_log` (KeyPath: `id` auto-incremental):**
   - Registro de eventos (`LOGIN_SUCCESS`, `VAULT_UNLOCKED`, `DOC_CREATED`, `DOC_VIEWED`, `DOC_DELETED`, etc.).
@@ -90,10 +91,34 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - *Manejo Robusto de Tokens en `VaultAuth`:* Implementado el método `refreshSession()`, capaz de renovar el token JWT mediante `POST /api/v1/auth/refresh` o re-autenticar al usuario de forma transparente. Si el backend retorna 401 durante el login (por contenedor serverless que ha rotado), el cliente ejecuta auto-registro transparente vía `POST /api/v1/auth/register` y reintenta inmediatamente la autenticación para obtener un JWT genuino firmado por el servidor.
   - *Sincronización Cloud Ininterrumpida en `BovedaApp`:* `syncWithCloud()` detecta códigos 401 en `batch-sync` o descarga remota, invoca silenciosamente `refreshSession()` y reintenta la operación con el token renovado. Incorpora protección de timeout mediante `AbortController` (12s) en cada petición de red y degradación elegante a modo local (`offline`) en caso de desconexión, erradicando falsos estados de error en la interfaz.
   - *Preservación de Usuarios Base en Persistencia Server (`server.js`):* `loadDB()` fusiona los usuarios iniciales del sistema (`atleta@halterofilia.com`, `andres.pro@boveda.com`, `demo.free@boveda.com`) con los registros cargados de `data/vault_cloud.json`, impidiendo que despliegues o reinicios purguen cuentas de dispositivo legítimas.
+- **Identificación Obligatoria en Primer Uso y Validación por Código OTP al Correo (Spec 007):**
+  - *Bloqueo de Primer Uso Ineludible:* Al abrir la app por primera vez en cualquier dispositivo sin perfil verificado (`vault_user_verified = false` o ficha incompleta), el sistema despliega el diálogo no eludible `#modal-first-run-onboarding` que bloquea la interfaz impidiendo escape o clics fuera.
+  - *Ficha de Identificación del Usuario:* Exige obligatoriamente Nombre, Apellidos, Correo Electrónico y Teléfono de Contacto (Foto de perfil opcional pero soportada con cámara WebRTC/móvil y galería).
+  - *Despacho de Código OTP y Servicio de Correo:* `POST /api/v1/auth/send-verification-code` genera un código numérico seguro de 6 dígitos con expiración de 15 minutos y lo despacha al correo vía SMTP nativo (`node:tls`/`node:net` con variables `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) o modo simulado para desarrollo y pruebas.
+  - *Verificación e Ingreso:* `POST /api/v1/auth/verify-code` valida la coincidencia estricta y vigencia del código, tras lo cual se persiste el perfil, se sincroniza el correo con la cadena de solicitud de licencia `REQ|<DeviceID>|<correo>` y se da paso a la configuración del PIN maestro de la bóveda (`pin-setup`).
+- **Service Worker v8 con Renovación Inmediata de Recursos:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v8'`.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-27 — Spec 007: Identificación Obligatoria en Primer Uso y Validación por Código al Correo Electrónico
+- **Identificación de Primer Uso y Modal de Onboarding Ineludible (`index.html`, `assets/js/app.js`):**
+  - Diseñado e implementado el diálogo modal `#modal-first-run-onboarding` con `oncancel="event.preventDefault();"` que se superpone obligatoriamente en el primer uso del dispositivo.
+  - Paso 1: Ficha obligatoria con Nombre, Apellidos, Correo Electrónico, Teléfono de Contacto y Foto con cámara móvil/web y galería.
+  - Paso 2: Pantalla de verificación con input numérico espaciado para código de 6 dígitos, alerta informativa de código en modo pruebas, reenvío de código y retorno a paso 1 para corregir datos.
+- **Endpoints de Verificación de Email en Backend con Soporte SMTP (`server.js`):**
+  - Implementado cliente SMTP nativo con `node:tls` / `node:net` (0 dependencias externas) configurable mediante `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`.
+  - Endpoint `POST /api/v1/auth/send-verification-code`: genera código OTP de 6 dígitos con expiración de 15 minutos, plantilla HTML estilizada y fallback simulado.
+  - Endpoint `POST /api/v1/auth/verify-code`: valida código, controla límite de 5 intentos fallidos y destruye el código tras validación exitosa.
+- **Gestión de Verificación en Cliente (`assets/js/license.js`, `assets/js/auth.js`):**
+  - Métodos `isUserIdentifiedAndVerified()` y `markUserVerified(status)` en `VaultLicenseManager` con persistencia dual (`IndexedDB` + `localStorage`).
+  - Métodos `sendEmailVerificationCode(email, fullName)` y `verifyEmailCode(email, code)` en `VaultAuth` con contingencia offline.
+  - Sincronización automática de perfil con la cadena de solicitud de licencia `REQ|<DeviceID>|<correo>` y restablecimiento de onboarding al desvincular el dispositivo.
+- **Service Worker v8 (`sw.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v8'`.
+- **Suite de Pruebas Automatizadas:**
+  - Añadidas pruebas en `tests/server.test.js` y `tests/boveda.test.js`. 57/57 pruebas pasando 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
 
 ### 2026-10-27 — Spec 006: Corrección de "Error en la Nube", Auto-Registro en Servidor Central y Resiliencia JWT
 - **Resolución de "Error en la Nube" y Robustecimiento de `syncWithCloud()` (`assets/js/app.js`):**

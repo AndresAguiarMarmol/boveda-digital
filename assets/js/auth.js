@@ -488,6 +488,95 @@ class VaultAuth {
   }
 
   /**
+   * Envía código validador al correo electrónico (Cloud First con contingencia)
+   * @param {string} email
+   * @param {string} fullName
+   * @returns {Promise<{ success: boolean, simulated?: boolean, code?: string, message?: string, error?: string }>}
+   */
+  async sendEmailVerificationCode(email, fullName) {
+    const isLive = !this.isDemoMode && await this.checkServerConnection();
+    if (isLive) {
+      try {
+        const res = await fetch(`${this.apiBaseUrl}/api/v1/auth/send-verification-code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, fullName })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          return { success: true, ...data };
+        } else {
+          return { success: false, error: data.error || 'Error al enviar código' };
+        }
+      } catch (e) {
+        console.warn('[VaultAuth] Error al contactar endpoint de código:', e);
+      }
+    }
+
+    // Modo local / contingencia offline: simular generación segura de código
+    const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('_vault_otp_' + email.trim().toLowerCase(), JSON.stringify({
+        code: mockCode,
+        expiresAt: Date.now() + 15 * 60 * 1000
+      }));
+    }
+    return {
+      success: true,
+      simulated: true,
+      code: mockCode,
+      message: 'Código generado en modo offline'
+    };
+  }
+
+  /**
+   * Valida el código validador de 6 dígitos ingresado por el usuario
+   * @param {string} email
+   * @param {string} code
+   * @returns {Promise<{ success: boolean, verified: boolean, error?: string }>}
+   */
+  async verifyEmailCode(email, code) {
+    const isLive = !this.isDemoMode && await this.checkServerConnection();
+    if (isLive) {
+      try {
+        const res = await fetch(`${this.apiBaseUrl}/api/v1/auth/verify-code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code })
+        });
+        const data = await res.json();
+        if (res.ok && data.verified) {
+          return { success: true, verified: true };
+        } else {
+          return { success: false, verified: false, error: data.error || 'Código incorrecto' };
+        }
+      } catch (e) {
+        console.warn('[VaultAuth] Error al contactar endpoint de verificación:', e);
+      }
+    }
+
+    // Validación en contingencia offline con sessionStorage
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem('_vault_otp_' + email.trim().toLowerCase());
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Date.now() > parsed.expiresAt) {
+            sessionStorage.removeItem('_vault_otp_' + email.trim().toLowerCase());
+            return { success: false, verified: false, error: 'El código ha expirado' };
+          }
+          if (parsed.code === code.trim()) {
+            sessionStorage.removeItem('_vault_otp_' + email.trim().toLowerCase());
+            return { success: true, verified: true };
+          }
+        } catch {}
+      }
+    }
+
+    return { success: false, verified: false, error: 'Código de verificación incorrecto' };
+  }
+
+  /**
    * Generador auxiliar de JWT Mock para pruebas y modo offline
    */
   _generateMockJwt(payload) {

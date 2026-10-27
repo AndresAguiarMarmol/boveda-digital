@@ -281,5 +281,65 @@ test('Servidor API: Inicialización y Suite de Endpoints', async (t) => {
     assert.equal(res.body.payload.deviceId, 'dev_backend_test');
     assert.equal(res.body.payload.email, 'admin@halterofilia.com');
   });
+
+  await t.test('SDD 007: POST /api/v1/auth/send-verification-code genera código OTP y valida sintaxis', async () => {
+    // 1. Rechazar sin email o formato inválido
+    const badRes = await makeRequest(
+      '/api/v1/auth/send-verification-code',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'correo-invalido-sin-arroba' }
+    );
+    assert.equal(badRes.status, 400);
+
+    // 2. Generación exitosa de código de 6 dígitos
+    const sendRes = await makeRequest(
+      '/api/v1/auth/send-verification-code',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'nuevo.usuario@ejemplo.com', fullName: 'Nuevo Usuario' }
+    );
+    assert.equal(sendRes.status, 200);
+    assert.equal(sendRes.body.success, true);
+    assert.equal(sendRes.body.email, 'nuevo.usuario@ejemplo.com');
+    assert.ok(sendRes.body.code, 'Debe devolver código en modo simulado para tests');
+    assert.equal(sendRes.body.code.length, 6);
+    assert.match(sendRes.body.code, /^[0-9]{6}$/);
+  });
+
+  await t.test('SDD 007: POST /api/v1/auth/verify-code valida códigos correctos y rechaza incorrectos o reusados', async () => {
+    // 1. Generar código para pruebas
+    const sendRes = await makeRequest(
+      '/api/v1/auth/send-verification-code',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'verif.test@ejemplo.com' }
+    );
+    const validCode = sendRes.body.code;
+
+    // 2. Probar código erróneo
+    const wrongRes = await makeRequest(
+      '/api/v1/auth/verify-code',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'verif.test@ejemplo.com', code: '000000' }
+    );
+    assert.equal(wrongRes.status, 400);
+
+    // 3. Probar código correcto
+    const correctRes = await makeRequest(
+      '/api/v1/auth/verify-code',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'verif.test@ejemplo.com', code: validCode }
+    );
+    assert.equal(correctRes.status, 200);
+    assert.equal(correctRes.body.success, true);
+    assert.equal(correctRes.body.verified, true);
+
+    // 4. Reuso del código debe ser rechazado inmediatamente
+    const reuseRes = await makeRequest(
+      '/api/v1/auth/verify-code',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'verif.test@ejemplo.com', code: validCode }
+    );
+    assert.equal(reuseRes.status, 400);
+  });
 });
+
 

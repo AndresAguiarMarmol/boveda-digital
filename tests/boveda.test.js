@@ -622,9 +622,9 @@ test('SDD 002: esPayloadCifradoValido descarta registros espurios y acepta datos
 test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js e index.html', () => {
   const rootDir = path.join(__dirname, '..');
 
-  // 1. sw.js debe ser v2, v3 o v4
+  // 1. sw.js debe ser v2, v3, v4, v5, v6, v7 o v8
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7"), 'sw.js debe definir CACHE_NAME v2, v3, v4, v5, v6 o v7 para forzar actualización en celulares');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7") || swContent.includes("boveda-digital-v8"), 'sw.js debe definir CACHE_NAME v2, v3, v4, v5, v6, v7 o v8 para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1048,6 +1048,70 @@ test('SDD 006: Resiliencia de Nube, auto-renovación de JWT y ausencia de fallos
   // 3. server.js debe fusionar usuarios iniciales con persistencia para no perder atletas o admins
   assert.ok(serverJs.includes('initialUsers'), 'server.js debe fusionar usuarios iniciales en loadDB');
 });
+
+test('SDD 007: Identificación Obligatoria en Primer Uso y Validación por Código al Correo', async () => {
+  const rootDir = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  const licenseJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'license.js'), 'utf8');
+  const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+
+  // 1. Verificación de UI en index.html
+  assert.ok(html.includes('id="modal-first-run-onboarding"'), 'index.html debe contener el modal modal-first-run-onboarding');
+  assert.ok(html.includes('id="onboarding-step-1"'), 'index.html debe contener el contenedor del Paso 1 (Ficha)');
+  assert.ok(html.includes('id="onboarding-step-2"'), 'index.html debe contener el contenedor del Paso 2 (Código OTP)');
+  assert.ok(html.includes('id="onboarding-first-name"'), 'index.html debe tener input de nombre');
+  assert.ok(html.includes('id="onboarding-last-name"'), 'index.html debe tener input de apellidos');
+  assert.ok(html.includes('id="onboarding-email"'), 'index.html debe tener input de correo');
+  assert.ok(html.includes('id="onboarding-phone"'), 'index.html debe tener input de teléfono');
+  assert.ok(html.includes('id="onboarding-otp-input"'), 'index.html debe tener input de código OTP');
+  assert.ok(html.includes('handleOnboardingSubmitStep1'), 'index.html debe enlazar handleOnboardingSubmitStep1');
+  assert.ok(html.includes('handleOnboardingSubmitStep2'), 'index.html debe enlazar handleOnboardingSubmitStep2');
+
+  // 2. Verificación en license.js
+  assert.ok(licenseJs.includes('isUserIdentifiedAndVerified'), 'license.js debe implementar isUserIdentifiedAndVerified()');
+  assert.ok(licenseJs.includes('markUserVerified'), 'license.js debe implementar markUserVerified()');
+
+  // 3. Verificación en auth.js
+  assert.ok(authJs.includes('sendEmailVerificationCode'), 'auth.js debe implementar sendEmailVerificationCode()');
+  assert.ok(authJs.includes('verifyEmailCode'), 'auth.js debe implementar verifyEmailCode()');
+
+  // 4. Verificación en app.js
+  assert.ok(appJs.includes('isUserIdentifiedAndVerified'), 'app.js debe evaluar isUserIdentifiedAndVerified en init()');
+  assert.ok(appJs.includes('openFirstRunOnboarding'), 'app.js debe implementar openFirstRunOnboarding()');
+  assert.ok(appJs.includes('handleOnboardingSubmitStep1'), 'app.js debe implementar handleOnboardingSubmitStep1()');
+  assert.ok(appJs.includes('handleOnboardingSubmitStep2'), 'app.js debe implementar handleOnboardingSubmitStep2()');
+
+  // 5. Verificación de Service Worker v8
+  assert.ok(swJs.includes("'boveda-digital-v8'"), 'sw.js debe operar con la versión de caché boveda-digital-v8');
+
+  // 6. Prueba funcional de lógica en clase VaultLicenseManager
+  const { VaultLicenseManager } = require('../assets/js/license.js');
+  const mgr = new VaultLicenseManager();
+  mgr.deviceId = 'dev_test_onboarding';
+
+  // Inicialmente sin perfil, debe retornar false
+  assert.equal(await mgr.isUserIdentifiedAndVerified(), false, 'Sin perfil completo debe retornar false');
+
+  // Con perfil pero sin verificación, debe retornar false
+  await mgr.saveUserProfile({
+    firstName: 'Juan',
+    lastName: 'Pérez',
+    email: 'juan.perez@ejemplo.com',
+    phone: '+56911223344'
+  });
+  assert.equal(await mgr.isUserIdentifiedAndVerified(), false, 'Perfil sin verificar correo debe retornar false');
+
+  // Al marcarlo verificado, debe retornar true
+  await mgr.markUserVerified(true);
+  assert.equal(await mgr.isUserIdentifiedAndVerified(), true, 'Perfil completo y verificado debe retornar true');
+
+  // Al desvincular, debe volver a false
+  await mgr.clearUserProfile();
+  assert.equal(await mgr.isUserIdentifiedAndVerified(), false, 'Tras desvincular debe volver a false');
+});
+
 
 
 

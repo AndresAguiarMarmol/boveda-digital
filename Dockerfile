@@ -18,7 +18,11 @@ RUN mkdir -p /app/data
 COPY package.json ./
 COPY server.js ./
 COPY index.html ./
+COPY manifest.json ./
+COPY sw.js ./
+COPY .nojekyll ./
 COPY assets/ ./assets/
+COPY data/ ./data/
 COPY docs/ ./docs/
 
 # Exponer el puerto predeterminado de Google Cloud Run

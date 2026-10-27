@@ -2121,6 +2121,25 @@ class BovedaApp {
       }
     }
 
+    // Actualizar elementos del diálogo modal de Nube si está presente
+    const modalLed = document.getElementById('cloud-modal-status-led');
+    const modalText = document.getElementById('cloud-modal-status-text');
+    if (modalText && modalLed) {
+      if (state === 'syncing') {
+        modalLed.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse';
+        modalText.textContent = 'Sincronizando con Servidor...';
+      } else if (state === 'synced') {
+        modalLed.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        modalText.textContent = 'Conectado y Sincronizado';
+      } else if (state === 'offline') {
+        modalLed.className = 'w-1.5 h-1.5 rounded-full bg-slate-400';
+        modalText.textContent = 'Modo Local / Offline';
+      } else if (state === 'error') {
+        modalLed.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        modalText.textContent = 'Error de Conexión';
+      }
+    }
+
     if (window.lucide) {
       setTimeout(() => window.lucide.createIcons(), 50);
     }
@@ -2201,6 +2220,127 @@ class BovedaApp {
         this.showToast('Error al conectar con la Nube. Se mantuvieron los datos locales.', 'danger');
       }
     }
+  }
+
+  /**
+   * Abre el diálogo de configuración y estado de Google Cloud Run
+   */
+  async openCloudSyncModal() {
+    const modal = document.getElementById('modal-cloud-sync');
+    if (!modal) return;
+
+    const urlDisplay = document.getElementById('cloud-modal-url-text');
+    const inputUrl = document.getElementById('input-cloud-api-url');
+    const savedCustomUrl = localStorage.getItem('boveda_api_base_url') || '';
+
+    if (urlDisplay) {
+      urlDisplay.textContent = window.vaultAuth.apiBaseUrl || 'No configurado';
+    }
+    if (inputUrl) {
+      inputUrl.value = savedCustomUrl;
+    }
+
+    modal.showModal();
+
+    // Comprobar estado en segundo plano
+    const isLive = await window.vaultAuth.checkServerConnection();
+    this.updateCloudSyncUI(isLive ? 'synced' : 'offline');
+
+    if (window.lucide) {
+      setTimeout(() => window.lucide.createIcons(), 50);
+    }
+  }
+
+  /**
+   * Dispara sincronización manual desde el modal de la nube
+   */
+  async handleCloudSyncNow() {
+    const icon = document.getElementById('icon-cloud-modal-sync');
+    if (icon) icon.classList.add('animate-spin');
+
+    try {
+      await this.syncWithCloud(false);
+    } finally {
+      if (icon) icon.classList.remove('animate-spin');
+      const urlDisplay = document.getElementById('cloud-modal-url-text');
+      if (urlDisplay) urlDisplay.textContent = window.vaultAuth.apiBaseUrl;
+    }
+  }
+
+  /**
+   * Prueba de conectividad con la URL de Cloud Run
+   */
+  async testCloudConnection() {
+    const input = document.getElementById('input-cloud-api-url');
+    let testUrl = input ? input.value.trim() : '';
+    if (!testUrl) {
+      testUrl = window.vaultAuth.apiBaseUrl;
+    } else {
+      if (!testUrl.startsWith('http://') && !testUrl.startsWith('https://')) {
+        testUrl = 'https://' + testUrl;
+      }
+      testUrl = testUrl.replace(/\/+$/, '');
+    }
+
+    this.showToast(`Probando conexión con ${testUrl}...`, 'info');
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${testUrl}/api/health`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        this.showToast(`🟢 Conexión exitosa con ${data.service || 'Google Cloud Run'}!`, 'success');
+        this.updateCloudSyncUI('synced');
+      } else {
+        this.showToast(`⚠️ El servidor respondió con código ${res.status}. Verifica la URL.`, 'warning');
+      }
+    } catch (err) {
+      this.showToast(`🔴 No se pudo conectar a ${testUrl}. Asegúrate de que el servicio esté activo y permita peticiones.`, 'danger');
+      this.updateCloudSyncUI('offline');
+    }
+  }
+
+  /**
+   * Guarda una nueva URL de Google Cloud Run y sincroniza
+   */
+  async saveCloudApiUrl() {
+    const input = document.getElementById('input-cloud-api-url');
+    const newUrl = input ? input.value.trim() : '';
+
+    if (!newUrl) {
+      this.showToast('Por favor ingresa una URL válida (ej. https://boveda-digital-xxxx.run.app)', 'warning');
+      return;
+    }
+
+    const activeUrl = window.vaultAuth.setApiBaseUrl(newUrl);
+    const urlDisplay = document.getElementById('cloud-modal-url-text');
+    if (urlDisplay) urlDisplay.textContent = activeUrl;
+
+    this.showToast(`Servidor configurado en: ${activeUrl}`, 'success');
+
+    // Probar conexión y sincronizar inmediatamente
+    await this.testCloudConnection();
+    if (window.vaultAuth.currentUser) {
+      await this.syncWithCloud(true);
+    }
+  }
+
+  /**
+   * Restablece la URL del servidor al origen automático
+   */
+  async resetCloudApiUrl() {
+    const defaultUrl = window.vaultAuth.setApiBaseUrl(null);
+    const input = document.getElementById('input-cloud-api-url');
+    const urlDisplay = document.getElementById('cloud-modal-url-text');
+
+    if (input) input.value = '';
+    if (urlDisplay) urlDisplay.textContent = defaultUrl;
+
+    this.showToast(`URL restablecida al origen predeterminado: ${defaultUrl}`, 'info');
+    await this.syncWithCloud(true);
   }
 
   bindEvents() {

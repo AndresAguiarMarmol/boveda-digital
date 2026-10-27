@@ -93,6 +93,18 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-26 — Optimización de Despliegue en Google Cloud Run y Modal de Configuración Multi-Dispositivo
+- **Empaquetado Completo para Google Cloud Run (`Dockerfile`, `desplegar-cloud.bat`):**
+  - Actualizado el `Dockerfile` para empaquetar `manifest.json`, `sw.js`, `.nojekyll` y el directorio `data/` con la base de datos persistente inicial (`vault_cloud.json`), garantizando la preservación de los documentos existentes del usuario al desplegar el contenedor.
+  - Creado el script de despliegue automatizado `desplegar-cloud.bat` para compilar y desplegar con 1 comando sobre Google Cloud Run con HTTPS y certificado SSL automático.
+- **Incremento de Límite de Payload en Servidor (`server.js`):**
+  - Elevado el límite de recepción JSON en `parseJSONBody` de 10MB a 50MB para soportar sin truncamiento sincronizaciones en lote (`batch-sync`) de expedientes voluminosos con adjuntos escaneados y PDFs en Base64.
+- **Diálogo Interactivo de Nube y Configuración de API Base (`index.html`, `assets/js/auth.js`, `assets/js/app.js`):**
+  - Implementado el método `setApiBaseUrl(url)` en `VaultAuth` con normalización automática de protocolo HTTPS y persistencia en `localStorage` (`boveda_api_base_url`).
+  - Añadido el diálogo `#modal-cloud-sync` en `index.html` con comprobación de estado de conexión en vivo, exhibición de la URL activa, botón de sincronización manual (`handleCloudSyncNow`), prueba de conectividad (`testCloudConnection`), configuración de URL personalizada de Google Cloud Run (`saveCloudApiUrl`) y botón de restablecimiento automático (`resetCloudApiUrl`).
+  - Permite a clientes PWA (como iPhones accediendo desde GitHub Pages o Safari) conectarse directamente a la instancia Cloud Run del usuario y sincronizar bidireccionalmente sus 13 expedientes.
+- **Suite de Pruebas Automatizadas:** 49/49 pruebas pasando 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
+
 ### 2026-10-24 — Corrección de esPayloadCifradoValido en VaultStorage, Robustecimiento de Decrypt y Service Worker v4
 - **Causa Raíz:**
   - Al ejecutar el asistente de descifrado interactivo de respaldo (`submitBackupPinUnlock`), se invocaba `window.vaultStorage.esPayloadCifradoValido(d)`, pero `esPayloadCifradoValido` solo existía como función pura y no como método en la clase `VaultStorage` ni en `window.vaultStorage`.

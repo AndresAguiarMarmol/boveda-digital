@@ -24,6 +24,29 @@ class VaultAuth {
   }
 
   /**
+   * Configura o restablece la URL base del servidor backend en la nube
+   * @param {string|null} url URL del servidor en Google Cloud Run o similar
+   */
+  setApiBaseUrl(url) {
+    if (url && typeof url === 'string' && url.trim().length > 0) {
+      let cleanUrl = url.trim().replace(/\/+$/, '');
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = 'https://' + cleanUrl;
+      }
+      localStorage.setItem('boveda_api_base_url', cleanUrl);
+      this.apiBaseUrl = cleanUrl;
+    } else {
+      localStorage.removeItem('boveda_api_base_url');
+      let defaultBaseUrl = 'https://api.ecosistema.com';
+      if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+        defaultBaseUrl = window.location.origin;
+      }
+      this.apiBaseUrl = defaultBaseUrl;
+    }
+    return this.apiBaseUrl;
+  }
+
+  /**
    * Comprueba si el servidor backend REST está activo y responde
    */
   async checkServerConnection() {

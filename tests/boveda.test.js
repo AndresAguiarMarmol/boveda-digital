@@ -904,6 +904,29 @@ test('SDD 003: Separación estricta de responsabilidades (index.html emite REQ y
   assert.ok(!html.includes('handleAdminGenerateToken'), 'index.html NO debe invocar handleAdminGenerateToken');
 });
 
+test('Google Cloud Run: Dockerfile completo, límite de 50MB y modal de sincronización en UI', () => {
+  const dockerfilePath = path.join(__dirname, '..', 'Dockerfile');
+  const dockerfile = fs.readFileSync(dockerfilePath, 'utf8');
+
+  // Dockerfile empaqueta componentes esenciales de PWA y datos
+  assert.ok(dockerfile.includes('COPY manifest.json'), 'Dockerfile debe copiar manifest.json');
+  assert.ok(dockerfile.includes('COPY sw.js'), 'Dockerfile debe copiar sw.js');
+  assert.ok(dockerfile.includes('COPY data/'), 'Dockerfile debe copiar data/ para persistir registros iniciales');
+
+  // server.js límite de 50MB
+  const serverPath = path.join(__dirname, '..', 'server.js');
+  const serverCode = fs.readFileSync(serverPath, 'utf8');
+  assert.ok(serverCode.includes('50 * 1024 * 1024'), 'server.js debe permitir payloads de hasta 50MB para batch-sync con adjuntos');
+
+  // UI modal de Cloud Run
+  const htmlPath = path.join(__dirname, '..', 'index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+  assert.ok(html.includes('id="modal-cloud-sync"'), 'index.html debe contener el diálogo modal-cloud-sync');
+  assert.ok(html.includes('id="input-cloud-api-url"'), 'index.html debe contener el input para URL de Cloud Run');
+  assert.ok(html.includes('id="cloud-modal-status-badge"'), 'index.html debe contener el badge de estado de Cloud Run');
+});
+
+
 
 
 

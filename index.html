@@ -318,8 +318,8 @@
           </button>
 
           <!-- Botón Sincronización en la Nube -->
-          <button id="btn-cloud-sync" title="Sincronización en la Nube (Clic para sincronizar ahora)"
-            onclick="window.bovedaApp.syncWithCloud();"
+          <button id="btn-cloud-sync" title="Sincronización en la Nube (Clic para sincronizar o configurar)"
+            onclick="window.bovedaApp.openCloudSyncModal();"
             class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-sky-400 hover:text-sky-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
             <i data-lucide="cloud" class="w-4 h-4" id="icon-cloud-sync"></i>
             <span class="hidden lg:inline" id="label-cloud-sync">Nube</span>
@@ -1053,6 +1053,88 @@
           </div>
         </div>
       </div>
+    </div>
+  </dialog>
+
+  <!-- =========================================================================
+       MODAL DE SINCRONIZACIÓN EN LA NUBE / GOOGLE CLOUD RUN (ZERO-KNOWLEDGE)
+       ========================================================================= -->
+  <dialog id="modal-cloud-sync" class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-md">
+    <div class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
+      <button onclick="document.getElementById('modal-cloud-sync').close();"
+        class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/5">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+          <i data-lucide="cloud" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Sincronización en la Nube (Cloud Run)</h3>
+          <p class="text-xs text-slate-400">Servidor backend centralizado Zero-Knowledge</p>
+        </div>
+      </div>
+
+      <!-- Garantía Criptográfica Zero-Knowledge -->
+      <div class="p-3.5 rounded-2xl bg-sky-500/5 border border-sky-500/20 text-xs text-sky-300/90 mb-5 flex items-start gap-2.5">
+        <i data-lucide="shield-check" class="w-4 h-4 text-sky-400 shrink-0 mt-0.5"></i>
+        <span><strong>Zero-Knowledge en Google Cloud:</strong> El servidor en la nube solo almacena payloads cifrados con AES-256-GCM. Nadie puede leer tus expedientes sin tu PIN maestro.</span>
+      </div>
+
+      <!-- Estado de Conexión -->
+      <div class="bg-slate-950/60 border border-white/5 rounded-2xl p-4 mb-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400 font-medium">Estado del Servidor:</span>
+          <span id="cloud-modal-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-white/10">
+            <span id="cloud-modal-status-led" class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+            <span id="cloud-modal-status-text">Comprobando...</span>
+          </span>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-slate-400">Servidor Activo:</span>
+          <span id="cloud-modal-url-text" class="text-slate-300 font-mono text-[11px] break-all select-all">cargando...</span>
+        </div>
+      </div>
+
+      <!-- Botón de Sincronización Inmediata -->
+      <div class="space-y-3 mb-6">
+        <button id="btn-cloud-sync-now" onclick="window.bovedaApp.handleCloudSyncNow();"
+          class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-sky-500/20">
+          <i data-lucide="refresh-cw" class="w-4 h-4" id="icon-cloud-modal-sync"></i>
+          <span>Sincronizar Bóveda Ahora</span>
+        </button>
+      </div>
+
+      <!-- Configuración del Servidor Cloud Run -->
+      <details id="details-cloud-settings" class="text-xs border-t border-white/5 pt-4">
+        <summary class="cursor-pointer text-slate-400 hover:text-slate-300 flex items-center gap-1.5 font-medium select-none">
+          <i data-lucide="server" class="w-3.5 h-3.5"></i> Configurar URL de Google Cloud Run
+        </summary>
+        <div class="mt-3 space-y-3">
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Si desplegaste tu servidor en <strong>Google Cloud Run</strong>, ingresa aquí la URL de tu servicio (ejemplo: <code>https://boveda-digital-xxxx.run.app</code>) para que este dispositivo se sincronice directamente con él:
+          </p>
+          <input type="url" id="input-cloud-api-url" placeholder="https://boveda-digital-xxxx.a.run.app"
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs font-mono focus:border-sky-400 focus:outline-none">
+          <div class="flex items-center justify-between pt-1 gap-2">
+            <button type="button" onclick="window.bovedaApp.resetCloudApiUrl();"
+              class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-[11px] font-medium transition-colors">
+              Restablecer Automático
+            </button>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="window.bovedaApp.testCloudConnection();"
+                class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sky-300 text-[11px] font-medium transition-colors flex items-center gap-1">
+                <i data-lucide="activity" class="w-3 h-3"></i> Probar Conexión
+              </button>
+              <button type="button" onclick="window.bovedaApp.saveCloudApiUrl();"
+                class="px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-[11px] transition-colors shadow">
+                Guardar y Conectar
+              </button>
+            </div>
+          </div>
+        </div>
+      </details>
     </div>
   </dialog>
 

@@ -154,7 +154,7 @@ function parseJSONBody(req) {
     let body = '';
     req.on('data', chunk => {
       body += chunk;
-      if (body.length > 10 * 1024 * 1024) { // Límite de 10MB
+      if (body.length > 50 * 1024 * 1024) { // Límite de 50MB para adjuntos y sincronizaciones en lote
         req.destroy();
         reject(new Error('Payload Too Large'));
       }

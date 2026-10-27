@@ -13,6 +13,15 @@ Guía para agentes de IA que trabajen en este proyecto.
    - Sección 3: añadir arriba una entrada con la fecha y un resumen breve del cambio.
 4. Si `memory.md` y el código no coinciden, avisar al usuario antes de seguir.
 
+## 4. Reglas de Negocio y Lógica Central
+
+### 4.1. Sistema de Licenciamiento y Seguridad Offline
+- **Período de Prueba:** 7 días completos (`TRIAL_DAYS = 7`, `604800000 ms`) desde la primera apertura.
+- **Bloqueo Trial:** Al expirar, se superpone un modal modal/overlay no eludible que solicita activación y muestra el contacto `+56933395447`.
+- **Criptografía:** Generación de `Device ID` único por dispositivo. Cadena de solicitud: `REQ|<DeviceID>|<correo>`.
+- **Validación de Token:** Token en Base64 con payload `{ deviceId, email, exp, signature }`.
+- **Firma:** SHA-256 con sal fija: `"Halterofilia-SuperSecret-Salt-2026"`. Validable 100% offline mediante `crypto.subtle`.
+
 ---
 
 ## Descripción del proyecto

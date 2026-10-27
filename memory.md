@@ -34,6 +34,7 @@ Registro de todo lo que debe preservarse entre sesiones de trabajo: arquitectura
   - `vault_trial_start`: Marca temporal en ms del primer arranque de la app para computar los 7 días de prueba.
   - `vault_license_token`: Token de activación Base64 verificado criptográficamente con `"Halterofilia-SuperSecret-Salt-2026"`.
   - `vault_license_data`: Metadatos de la licencia activa (`deviceId`, `email`, `exp`, `isPerpetual`).
+  - `vault_user_profile`: Objeto JSON del perfil del usuario registrado por dispositivo (`firstName`, `lastName`, `email`, `phone`, `photo`, `updatedAt`).
 
 - **Almacén `audit_log` (KeyPath: `id` auto-incremental):**
   - Registro de eventos (`LOGIN_SUCCESS`, `VAULT_UNLOCKED`, `DOC_CREATED`, `DOC_VIEWED`, `DOC_DELETED`, etc.).
@@ -47,10 +48,10 @@ Compatible con el backend centralizado de la app de Halterofilia:
   "apps": ["halterofilia", "boveda_digital"],
   "crypto_salt": "ae8713595fed1e759db1062454187513",
   "subscription": {
-    "plan": "free" | "pro",
+    "plan": "pro",
     "status": "active",
-    "max_docs": 5,
-    "cloud_sync_enabled": false
+    "max_docs": -1,
+    "cloud_sync_enabled": true
   }
 }
 ```
@@ -69,21 +70,25 @@ Compatible con el backend centralizado de la app de Halterofilia:
 - **Preservación y Portabilidad del Salt Criptográfico en Respaldos (`crypto_salt`):** Para garantizar que un respaldo JSON exportado en un dispositivo (PC) pueda ser importado y descifrado de forma transparente en otro dispositivo (teléfono celular), el archivo de respaldo exporta de manera pública y estandarizada el `crypto_salt` y el `pin_hash` de verificación. El módulo de descifrado en cliente implementa recuperación multi-salt automática que prueba claves secundarias/históricas con el PIN en memoria y re-cifra transparentemente los expedientes descifrados con la clave maestra activa actual.
 - **Asistente Interactivo de PIN de Respaldo y Re-Cifrado en Caliente:** Cuando un respaldo proviene de otro dispositivo protegido con un PIN maestro diferente o cuando no se pueden descifrar los expedientes de inmediato, el sistema despliega el diálogo accesible `#modal-backup-pin-prompt`. Al ingresar el PIN original del respaldo, el cliente prueba las sales candidatas, descifra los expedientes legítimos, los re-cifra inmediatamente con la clave maestra activa del dispositivo receptor y los guarda en `IndexedDB`, garantizando Zero-Knowledge absoluto y acceso instantáneo sin reiniciar la bóveda.
 - **Aislamiento de Entorno de Pruebas y Sanitización de Payloads:** Las pruebas automatizadas operan con `process.env.NO_DISK_PERSIST = 'true'`, evitando la contaminación de `data/vault_cloud.json`. Todos los métodos de importación, sincronización y serialización utilizan `esPayloadCifradoValido(doc)` para descartar registros corruptos o placeholders de tests, preservando exclusivamente documentos con payloads AES-256-GCM auténticos.
-- **Sistema de Licenciamiento y Seguridad Offline (Spec 003 / AGENTS.md 4.1):**
-  - *Período de Prueba (Trial):* 7 días continuos (`TRIAL_DAYS = 7`, `604,800,000 ms`) desde la primera apertura del dispositivo.
-  - *Device ID Único y Usuario Asociado:* Generados de forma persistente (`dev_<uuid>` y `usuario_<shortId>@boveda.com` o correo ingresado) y resguardados con persistencia dual (`IndexedDB` + `localStorage`).
+- **Sistema de Licenciamiento y Seguridad Offline (Spec 003 y 004 / AGENTS.md 4.1):**
+  - *Período de Prueba (Trial):* 7 días continuos (`TRIAL_DAYS = 7`, `604,800,000 ms`) desde la primera apertura del dispositivo con acceso completo e ilimitado de documentos.
+  - *Device ID Único y Usuario Asociado:* Generados de forma persistente (`dev_<uuid>` y usuario de perfil) con persistencia dual (`IndexedDB` + `localStorage`).
   - *Cadena de Solicitud Interactiva:* `REQ|<DeviceID>|<usuario>` con edición y sincronización reactiva en tiempo real en los modales `#modal-trial-lock` y `#modal-license-info`, copiado en 1 toque y enlace directo a WhatsApp `+56933395447`.
   - *Token de Activación:* Cadena Base64 con payload estructurado `{ deviceId, email, exp, signature }`.
   - *Firma Criptográfica SHA-256 y Delimitador Universal:* Firma calculada sobre la concatenación `${deviceId}|${email}|${exp}|${salt}` con sal fija `"Halterofilia-SuperSecret-Salt-2026"`. La validación en cliente tolera universalmente firmas generadas con delimitador pipe `|` (estándar Halterofilia) o dos puntos `:`, con insensibilidad a mayúsculas/minúsculas y comillas envolventes, y reconoce vigencias perpetuas de 9999 días o `-1`.
   - *Separación Arquitectónica Estricta (Cliente vs Administrador):* La aplicación cliente de Bóveda Digital NO expone generadores de tokens. El generador oficial pertenece exclusivamente al ecosistema administrativo externo de Halterofilia (`panel_administrador_de_licencias.html` en `Administrador Halterofilia` y `Halterofilia`) y al endpoint administrativo del backend `POST /api/v1/license/generate`.
   - *Bloqueo Estricto No Eludible:* Al expirar los 7 días sin licencia activa, el overlay `#modal-trial-lock` bloquea la interacción con la aplicación impidiendo eludir la pantalla hasta ingresar un token válido.
-- **Service Worker v3 con Estrategia Network-First para Código Local:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v3'`, incorporando `license.js` a los recursos esenciales precacheados.
+- **Eliminación de Dicotomía Demo Free/Pro y Esquema de Licenciamiento Unificado Halterofilia (Spec 004):**
+  - Suprimida la restricción artificial de 5 documentos máximos y los modales/botones de upgrade a PRO (`#modal-upgrade`, `#dash-plan-badge`, `#btn-header-upgrade` y botones demo del login).
+  - El archivado y guardado en gavetas opera ilimitadamente para todos los usuarios mientras el trial o la licencia permanezcan activos.
+- **Módulo de Creación y Gestión de Usuario por Dispositivo (Spec 004):**
+  - Botón `#btn-header-user-profile` anclado en la barra horizontal (Navbar superior) exhibiendo el avatar (foto o icono de usuario) y el nombre del usuario registrado en tiempo real.
+  - Diálogo accesible `#modal-user-profile` ("Perfil del Usuario Registrado") con previsualización circular de foto de perfil, botones de cámara móvil/web (`capture="user"`), galería de archivos y descarte de foto con redimensionamiento automático a 256x256 px en Canvas.
+  - Campos estructurados: Nombre, Apellidos, Correo Electrónico y Teléfono de Contacto, con persistencia dual (`IndexedDB` + `localStorage`), sincronización reactiva de correo en la cadena `REQ|<DeviceID>|<correo>` y botón "Desvincular" para preparar el equipo para un nuevo registro.
+- **Service Worker v5 con Estrategia Network-First para Código Local:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v5'`, incorporando `license.js` a los recursos esenciales precacheados.
 - **Acceso 100% Offline:** Toda la información cifrada reside en `IndexedDB`, permitiendo consultar y crear documentos sin conexión a internet.
 - **Sincronización Cloud Bidireccional y Despliegue en Google Cloud Run:** La aplicación cuenta con sincronización bidireccional automática y manual (`batch-sync`, descarga remota y eliminación sincronizada `DELETE /api/v1/documents/:id`). Detecta automáticamente el origen del servidor, actualiza el indicador de estado en la UI (🟢 Sincronizado, 🟡 Sincronizando, ⚪ Offline) y se distribuye con `Dockerfile` nativo optimizado para despliegue en Google Cloud Run.
 - **Compatibilidad con Backend Existente (Halterofilia):** Utiliza autenticación REST sobre HTTPS con tokens JWT / OAuth2, refresh tokens rotativos y sesiones administradas en servidor.
-- **Modelo de Licenciamiento de Planes:**
-  - *Plan Gratuito:* Limitado a un máximo de 5 documentos y almacenamiento local.
-  - *Plan PRO:* Almacenamiento ilimitado, alertas de vencimiento, copias de seguridad cifradas en la nube y exportación avanzada.
 - **Metáfora Visual de Mueble Gavetero (Filing Cabinet) Cromático y Extensible:** La organización de documentos se estructura en un archivador blindado donde cada gaveta cuenta con una identidad cromática única (LED, reflejo de tirador, bordes, riel y credencial visual). El sistema incluye 5 gavetas base (`identidad` Cyan, `vehiculos` Esmeralda, `finanzas` Ámbar, `residencia` Púrpura, `salud` Rosa) y permite al usuario crear gavetas personalizadas con nuevos conceptos, selector de color HSL/Hex y selector de iconos Lucide, con persistencia offline en `IndexedDB`. Los documentos cuentan con soporte completo de ciclo de vida: lectura descifrada, impresión limpia (`window.print()`), modificación con re-cifrado AES-256-GCM y eliminación.
 - **Arranque a 1 Toque (PWA) y Soporte Multiplataforma:** La aplicación implementa arquitectura Progressive Web App (`manifest.json`, `sw.js` y meta tags de pantalla completa standalone). En dispositivos móviles (Android/iOS) se instala como app nativa en la pantalla de inicio abriendo al instante sin barras de navegador. En escritorios Windows cuenta con lanzador batch de 1 toque (`iniciar.bat`) que orquesta el servidor local y el navegador.
 - **Sincronización y Respaldo Cifrado con Google Drive (Zero-Knowledge):** Los respaldos destinados a Google Drive exportan el paquete criptográfico estandarizado (`boveda_backup.json` con payloads AES-256-GCM, IVs, checksums SHA-256 y salt criptográfico). Google Drive almacena exclusivamente el archivo blob cifrado bajo el scope restringido `drive.file` / `drive.appdata`, garantizando que ni Google ni terceros pueden acceder a los datos sin el PIN maestro derivado por el usuario. La aplicación cuenta con sincronización automática continua en segundo plano (con debounce de 1.5s y refresco silencioso de token GIS) que se activa automáticamente al desbloquear la bóveda, crear, modificar o eliminar expedientes y gavetas personalizadas, configurable mediante un interruptor interactivo en la interfaz.
@@ -92,6 +97,23 @@ Compatible con el backend centralizado de la app de Halterofilia:
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-27 — Spec 004: Eliminación de Esquema Demo Free/Pro, Adopción Plena de Licenciamiento Halterofilia y Módulo de Usuario
+- **Eliminación Completa de la Dicotomía Demo Free vs Pro (`index.html`, `assets/js/app.js`, `assets/js/auth.js`, `server.js`):**
+  - Removidos los botones de acceso rápido demo ("Plan Gratuito" y "Plan PRO Ilimitado") de la pantalla de inicio de sesión en `index.html`.
+  - Suprimidos de la barra horizontal (Navbar) el badge `#dash-plan-badge` y el botón de mejora `#btn-header-upgrade`.
+  - Eliminado el modal `#modal-upgrade` (checkout simulado / mejora a PRO).
+  - Eliminada la restricción artificial de 5 documentos en `openNewDocumentModal()` de `app.js`, en `canAddDocument()` de `auth.js` y en el endpoint `POST /api/v1/documents` de `server.js`. El archivado y almacenamiento pasa a ser ilimitado bajo el esquema de licenciamiento de Halterofilia (Trial 7 días sin restricciones + Clave de Activación Base64 offline).
+- **Módulo de Creación y Gestión de Usuario por Dispositivo (`assets/js/license.js`, `index.html`, `assets/js/app.js`):**
+  - Incorporado el botón interactivo `#btn-header-user-profile` en la barra horizontal (Navbar superior) que exhibe en tiempo real la foto/avatar circular y el nombre del usuario registrado.
+  - Implementado el diálogo modal `#modal-user-profile` ("Perfil del Usuario Registrado") conforme al estándar de Halterofilia (badge "1 Por Dispositivo", aviso de licencia, captura con cámara `capture="user"`, subida desde galería, previsualización circular, campos Nombre, Apellidos, Correo Electrónico, Teléfono, botón "Guardar Cambios" y botón "Desvincular").
+  - Métodos `getUserProfile()`, `saveUserProfile(profile)` y `clearUserProfile()` en `VaultLicenseManager` con persistencia dual (`IndexedDB` + `localStorage`).
+  - Redimensionamiento automático de imágenes a 256x256 px en Canvas para garantizar ligereza y rendimiento en dispositivos móviles.
+  - Sincronización automática del correo del usuario registrado con `vaultLicenseManager.setUserEmail(email)` y la cadena de solicitud `REQ|<DeviceID>|<correo>` en los modales de licencia y bloqueo.
+- **Service Worker v5 (`sw.js`):**
+  - Actualizado `CACHE_NAME` a `'boveda-digital-v5'` para forzar la actualización transparente de la caché en navegadores de escritorio y celulares.
+- **Suite de Pruebas Automatizadas:**
+  - 52/52 pruebas pasando 100% en verde con `node --test tests/boveda.test.js tests/server.test.js`.
 
 ### 2026-10-26 — Optimización de Despliegue en Google Cloud Run y Modal de Configuración Multi-Dispositivo
 - **Empaquetado Completo para Google Cloud Run (`Dockerfile`, `desplegar-cloud.bat`):**

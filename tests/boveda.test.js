@@ -624,7 +624,7 @@ test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js 
 
   // 1. sw.js debe ser v2, v3 o v4
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4"), 'sw.js debe definir CACHE_NAME v2, v3 o v4 para forzar actualización en celulares');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5"), 'sw.js debe definir CACHE_NAME v2, v3, v4 o v5 para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -925,6 +925,85 @@ test('Google Cloud Run: Dockerfile completo, límite de 50MB y modal de sincroni
   assert.ok(html.includes('id="input-cloud-api-url"'), 'index.html debe contener el input para URL de Cloud Run');
   assert.ok(html.includes('id="cloud-modal-status-badge"'), 'index.html debe contener el badge de estado de Cloud Run');
 });
+
+test('SDD 004: VaultLicenseManager gestiona perfil de usuario registrado (nombre, apellidos, correo, teléfono, foto)', async () => {
+  const manager = new VaultLicenseManager();
+  manager.deviceId = 'dev_test_profile_001';
+
+  // 1. Guardar perfil de usuario completo
+  const profileInput = {
+    firstName: 'Andres',
+    lastName: 'Aguiar',
+    email: 'andres.aguiar@halterofilia.com',
+    phone: '+56933395447',
+    photo: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD...'
+  };
+  const saved = await manager.saveUserProfile(profileInput);
+  assert.equal(saved.firstName, 'Andres');
+  assert.equal(saved.lastName, 'Aguiar');
+  assert.equal(saved.email, 'andres.aguiar@halterofilia.com');
+  assert.equal(saved.phone, '+56933395447');
+  assert.ok(saved.photo.startsWith('data:image/jpeg;base64,'));
+
+  // 2. Comprobar persistencia y sincronización con cadena de solicitud REQ
+  const retrieved = await manager.getUserProfile();
+  assert.equal(retrieved.firstName, 'Andres');
+  assert.equal(manager.userEmail, 'andres.aguiar@halterofilia.com');
+
+  const estado = manager.getEstadoLicencia();
+  assert.equal(estado.email, 'andres.aguiar@halterofilia.com');
+  assert.ok(estado.cadenaSolicitud.includes('andres.aguiar@halterofilia.com'), 'La cadena de solicitud debe actualizarse con el correo del perfil');
+  assert.ok(estado.cadenaSolicitud.startsWith('REQ|dev_test_profile_001|'));
+
+  // 3. Desvincular usuario
+  const cleared = await manager.clearUserProfile();
+  assert.equal(cleared, true);
+  const profileAfterClear = await manager.getUserProfile();
+  assert.equal(profileAfterClear, null);
+  assert.ok(manager.userEmail.startsWith('usuario_'), 'Al desvincular debe restablecerse el usuario automático por Device ID');
+});
+
+test('SDD 004: Interfaz index.html cuenta con botón de perfil de usuario en barra horizontal y modal de usuario estilo Halterofilia', () => {
+  const htmlPath = path.join(__dirname, '..', 'index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  // Botón en la barra horizontal (Navbar superior)
+  assert.ok(html.includes('id="btn-header-user-profile"'), 'index.html debe contener el botón btn-header-user-profile en la barra horizontal');
+  assert.ok(html.includes('id="header-user-avatar-img"'), 'index.html debe contener el elemento de imagen de avatar');
+  assert.ok(html.includes('id="header-user-name"'), 'index.html debe contener el span con el nombre del usuario');
+  assert.ok(html.includes('openUserProfileModal()'), 'El botón debe invocar openUserProfileModal()');
+
+  // Modal de usuario registrado (Estándar Halterofilia)
+  assert.ok(html.includes('id="modal-user-profile"'), 'index.html debe contener el diálogo modal-user-profile');
+  assert.ok(html.includes('Perfil del Usuario Registrado'), 'El modal debe titularse Perfil del Usuario Registrado');
+  assert.ok(html.includes('1 Por Dispositivo'), 'El modal debe incluir la insignia 1 Por Dispositivo');
+  assert.ok(html.includes('id="user-profile-first-name"'), 'Debe incluir input para Nombre');
+  assert.ok(html.includes('id="user-profile-last-name"'), 'Debe incluir input para Apellidos');
+  assert.ok(html.includes('id="user-profile-email"'), 'Debe incluir input para Correo Electrónico');
+  assert.ok(html.includes('id="user-profile-phone"'), 'Debe incluir input para Teléfono');
+  assert.ok(html.includes('id="user-profile-camera-input"'), 'Debe incluir input con capture para cámara');
+  assert.ok(html.includes('id="user-profile-upload-input"'), 'Debe incluir input para subir foto de galería');
+  assert.ok(html.includes('id="btn-save-user-profile"'), 'Debe incluir botón para Guardar Cambios');
+  assert.ok(html.includes('id="btn-unlink-user-profile"'), 'Debe incluir botón para Desvincular usuario');
+});
+
+test('SDD 004: Eliminación completa del esquema demo-free / demo-pro', () => {
+  const htmlPath = path.join(__dirname, '..', 'index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  // Ausencia de componentes demo free/pro
+  assert.ok(!html.includes('id="modal-upgrade"'), 'index.html NO debe contener el modal modal-upgrade');
+  assert.ok(!html.includes('id="dash-plan-badge"'), 'index.html NO debe contener el badge dash-plan-badge');
+  assert.ok(!html.includes('id="btn-header-upgrade"'), 'index.html NO debe contener el botón btn-header-upgrade');
+  assert.ok(!html.includes('demo.free@boveda.com'), 'index.html NO debe contener el acceso rápido demo.free');
+
+  // Verificación en app.js: ausencia de llamadas a openUpgradeModal
+  const appPath = path.join(__dirname, '..', 'assets', 'js', 'app.js');
+  const appJs = fs.readFileSync(appPath, 'utf8');
+  assert.ok(!appJs.includes('openUpgradeModal('), 'app.js NO debe invocar openUpgradeModal');
+  assert.ok(!appJs.includes('processSimulatedProCheckout('), 'app.js NO debe contener checkout simulado');
+});
+
 
 
 

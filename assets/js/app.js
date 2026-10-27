@@ -167,30 +167,61 @@ class BovedaApp {
   }
 
   /**
-   * Actualiza el encabezado del dashboard con datos del usuario y suscripción
+   * Actualiza el encabezado del dashboard con datos del usuario y perfil registrado
    */
-  renderDashboardHeader() {
+  async renderDashboardHeader() {
     const user = window.vaultAuth.currentUser;
-    if (!user) return;
-
     const emailEl = document.getElementById('dash-user-email');
-    if (emailEl) emailEl.textContent = user.email;
+    if (emailEl && user) emailEl.textContent = user.email;
 
-    const planBadge = document.getElementById('dash-plan-badge');
-    const isPro = user.subscription && user.subscription.plan === 'pro';
-    if (planBadge) {
-      if (isPro) {
-        planBadge.className = 'badge-status badge-pro';
-        planBadge.innerHTML = '<i data-lucide="crown" class="w-3.5 h-3.5"></i> Plan PRO Ilimitado';
+    // Actualizar botón de perfil de usuario en la barra horizontal
+    await this.renderHeaderUserProfile();
+  }
+
+  /**
+   * Renderiza el botón de perfil de usuario en la barra horizontal (Navbar superior)
+   */
+  async renderHeaderUserProfile() {
+    let profile = window.vaultLicense ? window.vaultLicense.userProfile : null;
+    if (!profile && window.vaultLicense && typeof window.vaultLicense.getUserProfile === 'function') {
+      profile = await window.vaultLicense.getUserProfile();
+    }
+
+    const nameEl = document.getElementById('header-user-name');
+    const avatarImg = document.getElementById('header-user-avatar-img');
+    const avatarIcon = document.getElementById('header-user-avatar-icon');
+
+    let displayName = 'Registrar Usuario';
+    let photoUrl = null;
+
+    if (profile && (profile.firstName || profile.lastName || profile.email)) {
+      const full = `${profile.firstName || ''} ${profile.lastName || ''}`.trim();
+      displayName = full || (profile.email ? profile.email.split('@')[0] : 'Usuario');
+      photoUrl = profile.photo || null;
+    } else if (window.vaultAuth && window.vaultAuth.currentUser && window.vaultAuth.currentUser.email) {
+      displayName = window.vaultAuth.currentUser.email.split('@')[0];
+    } else if (window.vaultLicense && window.vaultLicense.userEmail) {
+      displayName = window.vaultLicense.userEmail.split('@')[0];
+    }
+
+    if (nameEl) {
+      nameEl.textContent = displayName;
+    }
+
+    if (avatarImg && avatarIcon) {
+      if (photoUrl) {
+        avatarImg.src = photoUrl;
+        avatarImg.classList.remove('hidden');
+        avatarIcon.classList.add('hidden');
       } else {
-        planBadge.className = 'badge-status badge-valid';
-        planBadge.innerHTML = '<i data-lucide="shield" class="w-3.5 h-3.5"></i> Plan Gratuito (Máx 5 docs)';
+        avatarImg.src = '';
+        avatarImg.classList.add('hidden');
+        avatarIcon.classList.remove('hidden');
       }
     }
 
-    const upgradeBtn = document.getElementById('btn-header-upgrade');
-    if (upgradeBtn) {
-      upgradeBtn.style.display = isPro ? 'none' : 'inline-flex';
+    if (window.lucide) {
+      window.lucide.createIcons();
     }
   }
 
@@ -990,9 +1021,8 @@ class BovedaApp {
    * Abre el modal de creación de documento permitiendo preseleccionar gaveta
    */
   openNewDocumentModal(categoryPreselect = null) {
-    const user = window.vaultAuth.currentUser;
-    if (!window.vaultAuth.canAddDocument(this.unlockedDocuments.length)) {
-      this.openUpgradeModal('Has alcanzado el límite de 5 documentos de tu Plan Gratuito. Actualiza a Pro para archivado ilimitado en todas las gavetas.');
+    if (window.vaultLicense && window.vaultLicense.isExpired && !window.vaultLicense.isLicensed) {
+      this.openTrialLockModal();
       return;
     }
 
@@ -1868,39 +1898,201 @@ class BovedaApp {
   }
 
   /**
-   * Abre modal de suscripción a Pro
+   * Abre el modal de perfil de usuario registrado (Estándar Halterofilia)
    */
-  openUpgradeModal(message = '') {
-    const modal = document.getElementById('modal-upgrade');
-    const noticeEl = document.getElementById('upgrade-notice-text');
-    if (noticeEl) noticeEl.textContent = message;
-    if (modal) modal.showModal();
+  async openUserProfileModal() {
+    const modal = document.getElementById('modal-user-profile');
+    if (!modal) return;
+
+    let profile = window.vaultLicense ? window.vaultLicense.userProfile : null;
+    if (!profile && window.vaultLicense && typeof window.vaultLicense.getUserProfile === 'function') {
+      profile = await window.vaultLicense.getUserProfile();
+    }
+
+    const firstNameInput = document.getElementById('user-profile-first-name');
+    const lastNameInput = document.getElementById('user-profile-last-name');
+    const emailInput = document.getElementById('user-profile-email');
+    const phoneInput = document.getElementById('user-profile-phone');
+    const photoImg = document.getElementById('user-profile-photo-img');
+    const photoPlaceholder = document.getElementById('user-profile-photo-placeholder');
+    const removeBtn = document.getElementById('btn-remove-user-photo');
+
+    const defaultEmail = (profile && profile.email) ||
+                         (window.vaultAuth?.currentUser?.email) ||
+                         (window.vaultLicense?.userEmail) || '';
+
+    if (firstNameInput) firstNameInput.value = (profile && profile.firstName) || '';
+    if (lastNameInput) lastNameInput.value = (profile && profile.lastName) || '';
+    if (emailInput) emailInput.value = defaultEmail;
+    if (phoneInput) phoneInput.value = (profile && profile.phone) || '';
+
+    this._pendingUserPhoto = profile ? profile.photo : null;
+
+    if (photoImg && photoPlaceholder) {
+      if (this._pendingUserPhoto) {
+        photoImg.src = this._pendingUserPhoto;
+        photoImg.classList.remove('hidden');
+        photoPlaceholder.classList.add('hidden');
+        if (removeBtn) {
+          removeBtn.classList.remove('hidden');
+          removeBtn.classList.add('inline-flex');
+        }
+      } else {
+        photoImg.src = '';
+        photoImg.classList.add('hidden');
+        photoPlaceholder.classList.remove('hidden');
+        if (removeBtn) {
+          removeBtn.classList.add('hidden');
+          removeBtn.classList.remove('inline-flex');
+        }
+      }
+    }
+
+    modal.showModal();
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  }
+
+  /**
+   * Cierra el modal de perfil de usuario registrado
+   */
+  closeUserProfileModal() {
+    const modal = document.getElementById('modal-user-profile');
+    if (modal) modal.close();
+  }
+
+  /**
+   * Captura o selecciona una foto de perfil y la redimensiona a 256x256 px en Canvas
+   */
+  handleUserPhotoCapture(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      this.showToast('Por favor selecciona un archivo de imagen válido.', 'warning');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 256;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height = Math.round(height * (MAX_SIZE / width));
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width = Math.round(width * (MAX_SIZE / height));
+            height = MAX_SIZE;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        this._pendingUserPhoto = dataUrl;
+
+        const photoImg = document.getElementById('user-profile-photo-img');
+        const photoPlaceholder = document.getElementById('user-profile-photo-placeholder');
+        const removeBtn = document.getElementById('btn-remove-user-photo');
+
+        if (photoImg && photoPlaceholder) {
+          photoImg.src = dataUrl;
+          photoImg.classList.remove('hidden');
+          photoPlaceholder.classList.add('hidden');
+          if (removeBtn) {
+            removeBtn.classList.remove('hidden');
+            removeBtn.classList.add('inline-flex');
+          }
+        }
+        if (window.lucide) window.lucide.createIcons();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /**
+   * Quita la foto de perfil asignada
+   */
+  removeUserPhoto() {
+    this._pendingUserPhoto = null;
+    const photoImg = document.getElementById('user-profile-photo-img');
+    const photoPlaceholder = document.getElementById('user-profile-photo-placeholder');
+    const removeBtn = document.getElementById('btn-remove-user-photo');
+
+    if (photoImg && photoPlaceholder) {
+      photoImg.src = '';
+      photoImg.classList.add('hidden');
+      photoPlaceholder.classList.remove('hidden');
+      if (removeBtn) {
+        removeBtn.classList.add('hidden');
+        removeBtn.classList.remove('inline-flex');
+      }
+    }
     if (window.lucide) window.lucide.createIcons();
   }
 
   /**
-   * Simula pago exitoso y activa Plan Pro
+   * Guarda los cambios del perfil de usuario y actualiza los indicadores del sistema
    */
-  async processSimulatedProCheckout() {
-    const btn = document.getElementById('btn-confirm-upgrade');
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Procesando con Stripe / IAP...';
+  async saveUserProfile() {
+    const firstName = (document.getElementById('user-profile-first-name')?.value || '').trim();
+    const lastName = (document.getElementById('user-profile-last-name')?.value || '').trim();
+    const email = (document.getElementById('user-profile-email')?.value || '').trim().toLowerCase();
+    const phone = (document.getElementById('user-profile-phone')?.value || '').trim();
+    const photo = this._pendingUserPhoto !== undefined ? this._pendingUserPhoto : (window.vaultLicense?.userProfile?.photo || null);
+
+    if (!firstName) {
+      this.showToast('Por favor ingresa tu nombre.', 'warning');
+      return;
+    }
+    if (!email) {
+      this.showToast('Por favor ingresa un correo electrónico válido.', 'warning');
+      return;
     }
 
-    await new Promise(r => setTimeout(r, 1200));
-    await window.vaultAuth.upgradeToPro();
-
-    this.showToast('¡Felicidades! Tu cuenta ahora tiene Plan PRO Ilimitado.', 'success');
-    document.getElementById('modal-upgrade').close();
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = 'Activar Plan PRO ($4.99/mes)';
+    if (window.vaultLicense && typeof window.vaultLicense.saveUserProfile === 'function') {
+      await window.vaultLicense.saveUserProfile({ firstName, lastName, email, phone, photo });
     }
 
-    this.renderDashboardHeader();
-    this.renderMetrics();
-    await this.loadAndRenderDocuments();
+    await this.renderHeaderUserProfile();
+    this.updateLicenseUI();
+
+    // Sincronizar inputs de correo en modales de licencia
+    const lockEmailInput = document.getElementById('lock-user-email-input');
+    if (lockEmailInput) lockEmailInput.value = email;
+    const infoEmailInput = document.getElementById('info-user-email-input');
+    if (infoEmailInput) infoEmailInput.value = email;
+
+    this.closeUserProfileModal();
+    this.showToast('Perfil de usuario guardado y asociado al dispositivo.', 'success');
+  }
+
+  /**
+   * Desvincula el usuario actual del dispositivo
+   */
+  async unlinkUserProfile() {
+    if (!confirm('¿Estás seguro de desvincular este usuario del dispositivo? El equipo quedará disponible para registrar un nuevo usuario.')) {
+      return;
+    }
+
+    this._pendingUserPhoto = null;
+    if (window.vaultLicense && typeof window.vaultLicense.clearUserProfile === 'function') {
+      await window.vaultLicense.clearUserProfile();
+    }
+
+    await this.renderHeaderUserProfile();
+    this.updateLicenseUI();
+    this.closeUserProfileModal();
+    this.showToast('Usuario desvinculado con éxito.', 'info');
   }
 
   /**

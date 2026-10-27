@@ -271,9 +271,12 @@ class VaultLicenseManager {
     }
     this.deviceId = devId;
 
-    // 2. Resolver o generar el Usuario Asociado persistente
-    let userEmail = null;
-    if (typeof localStorage !== 'undefined') {
+    // 2. Cargar perfil de usuario registrado si existe
+    await this.getUserProfile();
+
+    // Resolver o generar el Usuario Asociado persistente
+    let userEmail = this.userProfile?.email || null;
+    if (!userEmail && typeof localStorage !== 'undefined') {
       userEmail = localStorage.getItem('vault_user_email');
     }
     if (!userEmail && typeof window !== 'undefined' && window.vaultStorage) {
@@ -363,6 +366,86 @@ class VaultLicenseManager {
       await window.vaultStorage.setSetting('vault_user_email', cleanEmail);
     }
     return this.getEstadoLicencia(cleanEmail);
+  }
+
+  /**
+   * Obtiene el perfil de usuario registrado para este dispositivo
+   * @returns {Promise<{ firstName: string, lastName: string, email: string, phone: string, photo: string|null, updatedAt: string }|null>}
+   */
+  async getUserProfile() {
+    let profile = this.userProfile || null;
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('vault_user_profile');
+      if (stored) {
+        try { profile = JSON.parse(stored); } catch (e) {}
+      }
+    }
+    if (!profile && typeof window !== 'undefined' && window.vaultStorage) {
+      const stored = await window.vaultStorage.getSetting('vault_user_profile');
+      if (stored) {
+        profile = typeof stored === 'string' ? JSON.parse(stored) : stored;
+      }
+    }
+    this.userProfile = profile;
+    return profile;
+  }
+
+  /**
+   * Guarda y sincroniza el perfil del usuario registrado
+   * @param {object} profileData 
+   * @returns {Promise<object>}
+   */
+  async saveUserProfile(profileData = {}) {
+    const cleanEmail = (profileData.email || this.userEmail || '').trim().toLowerCase();
+    const cleanFirstName = (profileData.firstName || '').trim();
+    const cleanLastName = (profileData.lastName || '').trim();
+    const cleanPhone = (profileData.phone || '').trim();
+    const photo = profileData.photo || null;
+
+    const profile = {
+      firstName: cleanFirstName,
+      lastName: cleanLastName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      photo: photo,
+      updatedAt: new Date().toISOString()
+    };
+
+    this.userProfile = profile;
+
+    if (cleanEmail) {
+      await this.setUserEmail(cleanEmail);
+    }
+
+    const jsonStr = JSON.stringify(profile);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('vault_user_profile', jsonStr);
+    }
+    if (typeof window !== 'undefined' && window.vaultStorage) {
+      await window.vaultStorage.setSetting('vault_user_profile', profile);
+    }
+
+    return profile;
+  }
+
+  /**
+   * Desvincula y limpia el perfil de usuario registrado en este dispositivo
+   * @returns {Promise<boolean>}
+   */
+  async clearUserProfile() {
+    this.userProfile = null;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('vault_user_profile');
+    }
+    if (typeof window !== 'undefined' && window.vaultStorage) {
+      await window.vaultStorage.setSetting('vault_user_profile', null);
+    }
+
+    // Restablecer correo asociado automático por Device ID
+    const shortId = (this.deviceId || 'dev_unknown').replace('dev_', '').substring(0, 8);
+    const defaultEmail = `usuario_${shortId}@boveda.com`;
+    await this.setUserEmail(defaultEmail);
+    return true;
   }
 
   /**

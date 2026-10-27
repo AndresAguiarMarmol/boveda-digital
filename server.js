@@ -476,13 +476,7 @@ const server = http.createServer(async (req, res) => {
         const body = await parseJSONBody(req);
         const userDocs = db.documents.get(authUser.sub) || [];
 
-        // Validar cuota en Plan Free (máximo 5 documentos)
-        const isFree = (authUser.subscription && authUser.subscription.plan === 'free');
-        if (isFree && userDocs.length >= 5) {
-          return sendJSON(res, 403, {
-            error: 'Límite alcanzado: El Plan Gratuito permite un máximo de 5 documentos. Actualiza a PRO para almacenamiento ilimitado.'
-          });
-        }
+        // Esquema Halterofilia: Almacenamiento ilimitado para usuarios del ecosistema
 
         const newDoc = {
           id: body.id || 'doc_' + crypto.randomUUID(),

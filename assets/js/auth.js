@@ -336,14 +336,16 @@ class VaultAuth {
   }
 
   /**
-   * Comprueba si el usuario puede añadir un nuevo documento según su plan
+   * Comprueba si el usuario puede añadir un nuevo documento según el esquema Halterofilia
    * @param {number} currentDocsCount 
    */
   canAddDocument(currentDocsCount) {
     if (!this.currentUser) return false;
-    const plan = this.currentUser.subscription ? this.currentUser.subscription.plan : 'free';
-    if (plan === 'pro') return true;
-    return currentDocsCount < 5;
+    // Esquema Halterofilia: Documentos ilimitados mientras el trial o la licencia estén vigentes
+    if (typeof window !== 'undefined' && window.vaultLicense && window.vaultLicense.isExpired && !window.vaultLicense.isLicensed) {
+      return false;
+    }
+    return true;
   }
 
   /**

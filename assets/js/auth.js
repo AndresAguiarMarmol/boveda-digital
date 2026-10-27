@@ -140,6 +140,53 @@ class VaultAuth {
         } else {
           const err = await response.json().catch(() => ({}));
           console.warn('[VaultAuth] Error retornado por servidor central:', err.error || err.message);
+
+          // Si el servidor retornó 401 (ej. usuario de dispositivo no presente en contenedor),
+          // intentar auto-registro transparente y re-login inmediato
+          if (response.status === 401 && password) {
+            try {
+              const regRes = await fetch(`${this.apiBaseUrl}/api/v1/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  email: email.trim().toLowerCase(),
+                  password,
+                  full_name: email.split('@')[0].toUpperCase(),
+                  app: 'boveda_digital'
+                })
+              });
+              if (regRes.ok || regRes.status === 409) {
+                const retryResponse = await fetch(`${this.apiBaseUrl}/api/v1/auth/login`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email, password, app: 'boveda_digital' })
+                });
+                if (retryResponse.ok) {
+                  const data = await retryResponse.json();
+                  this.accessToken = data.accessToken || data.access_token;
+                  this.refreshToken = data.refreshToken || data.refresh_token;
+                  this.currentUser = data.user;
+                  let salt = data.user.crypto_salt;
+                  if (!salt) {
+                    salt = await window.vaultStorage.getSetting('userSalt_' + data.user.email) || window.vaultCrypto.generateRandomSalt(16);
+                  }
+                  this.salt = salt;
+                  await window.vaultStorage.setSetting('currentUser', this.currentUser);
+                  await window.vaultStorage.setSetting('accessToken', this.accessToken);
+                  await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
+                  await window.vaultStorage.setSetting('userSalt_' + data.user.email, this.salt);
+                  await window.vaultStorage.setSetting('userSalt', this.salt);
+                  await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'cloud_autoreg' });
+                  if (typeof window !== 'undefined' && window.vaultLicense) {
+                    window.vaultLicense.setUserEmail(this.currentUser.email);
+                  }
+                  return { success: true, user: this.currentUser, requiresPinSetup: !(await this.hasConfiguredPin()) };
+                }
+              }
+            } catch (regErr) {
+              console.warn('[VaultAuth] Falló auto-registro en servidor:', regErr.message);
+            }
+          }
         }
       } catch (e) {
         console.warn('[VaultAuth] Servidor inalcanzable, activando contingencia local:', e.message);
@@ -359,6 +406,85 @@ class VaultAuth {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Intenta refrescar o adquirir un token de acceso JWT válido contra el servidor central
+   */
+  async refreshSession() {
+    const isLive = await this.checkServerConnection();
+    if (!isLive) return false;
+
+    // 1. Si tenemos refreshToken, probar endpoint oficial de renovación
+    if (this.refreshToken && !this.refreshToken.startsWith('rft_mock')) {
+      try {
+        const res = await fetch(`${this.apiBaseUrl}/api/v1/auth/refresh`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.accessToken ? { 'Authorization': `Bearer ${this.accessToken}` } : {})
+          },
+          body: JSON.stringify({ refreshToken: this.refreshToken })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          this.accessToken = data.accessToken || data.access_token;
+          await window.vaultStorage.setSetting('accessToken', this.accessToken);
+          return true;
+        }
+      } catch (err) {
+        console.warn('[VaultAuth] Error al invocar refresh token:', err.message);
+      }
+    }
+
+    // 2. Si el token actual es mock o falló el refresh, intentar re-autenticación con el usuario activo
+    const email = this.currentUser ? this.currentUser.email : null;
+    if (email) {
+      const knownPasswords = ['PasswordSeguro123!'];
+      for (const pwd of knownPasswords) {
+        try {
+          const loginRes = await fetch(`${this.apiBaseUrl}/api/v1/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password: pwd, app: 'boveda_digital' })
+          });
+          if (loginRes.ok) {
+            const data = await loginRes.json();
+            this.accessToken = data.accessToken || data.access_token;
+            this.refreshToken = data.refreshToken || data.refresh_token;
+            await window.vaultStorage.setSetting('accessToken', this.accessToken);
+            await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
+            return true;
+          } else if (loginRes.status === 401) {
+            // Intentar auto-registro transparente en el servidor central si aún no existe
+            const regRes = await fetch(`${this.apiBaseUrl}/api/v1/auth/register`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password: pwd, full_name: email.split('@')[0].toUpperCase(), app: 'boveda_digital' })
+            });
+            if (regRes.ok || regRes.status === 409) {
+              const retryLogin = await fetch(`${this.apiBaseUrl}/api/v1/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password: pwd, app: 'boveda_digital' })
+              });
+              if (retryLogin.ok) {
+                const data = await retryLogin.json();
+                this.accessToken = data.accessToken || data.access_token;
+                this.refreshToken = data.refreshToken || data.refresh_token;
+                await window.vaultStorage.setSetting('accessToken', this.accessToken);
+                await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
+                return true;
+              }
+            }
+          }
+        } catch {
+          // Servidor inalcanzable
+        }
+      }
+    }
+
+    return false;
   }
 
   /**

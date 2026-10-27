@@ -624,7 +624,7 @@ test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js 
 
   // 1. sw.js debe ser v2, v3 o v4
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6"), 'sw.js debe definir CACHE_NAME v2, v3, v4, v5 o v6 para forzar actualización en celulares');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7"), 'sw.js debe definir CACHE_NAME v2, v3, v4, v5, v6 o v7 para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1028,6 +1028,25 @@ test('SDD 005: Conexión Online con Cloud Run por defecto y visor prominente de 
 
   // 4. server.js debe reconocer al usuario de dispositivo atleta@halterofilia.com
   assert.ok(serverJs.includes('atleta@halterofilia.com'), 'server.js debe reconocer usuario de dispositivo');
+});
+
+test('SDD 006: Resiliencia de Nube, auto-renovación de JWT y ausencia de fallos bloqueantes de sincronización', () => {
+  const rootDir = path.join(__dirname, '..');
+  const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const serverJs = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
+
+  // 1. VaultAuth debe implementar refreshSession y auto-registro
+  assert.ok(authJs.includes('async refreshSession()'), 'VaultAuth debe definir el método refreshSession');
+  assert.ok(authJs.includes('cloud_autoreg'), 'VaultAuth debe auto-registrar al usuario en caso de 401');
+
+  // 2. syncWithCloud debe manejar 401 de forma resiliente con reintento y degradación suave a offline
+  assert.ok(appJs.includes('syncRes.status === 401'), 'syncWithCloud debe detectar código 401 y renovar sesión');
+  assert.ok(appJs.includes('controllerSync'), 'syncWithCloud debe contar con AbortController para evitar bloqueos');
+  assert.ok(appJs.includes('Modo Local (Datos Protegidos)'), 'syncWithCloud debe degradar elegantemente a modo local protegido en caso de desconexión');
+
+  // 3. server.js debe fusionar usuarios iniciales con persistencia para no perder atletas o admins
+  assert.ok(serverJs.includes('initialUsers'), 'server.js debe fusionar usuarios iniciales en loadDB');
 });
 
 

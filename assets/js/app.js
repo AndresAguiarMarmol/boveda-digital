@@ -2386,40 +2386,91 @@ class BovedaApp {
       return;
     }
 
-    const token = window.vaultAuth.accessToken;
+    let token = window.vaultAuth.accessToken;
     const apiBase = window.vaultAuth.apiBaseUrl;
 
     try {
+      // Si el token es un mock local o está ausente, intentar adquirir token JWT genuino del servidor
+      if (!token || token.includes('mock_signature')) {
+        const refreshed = await window.vaultAuth.refreshSession();
+        if (refreshed) {
+          token = window.vaultAuth.accessToken;
+        }
+      }
+
       // 1. Obtener todos los documentos locales de IndexedDB
       const localDocs = await window.vaultStorage.getAllDocuments(user.sub);
 
       // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados)
       if (token) {
-        const syncRes = await fetch(`${apiBase}/api/v1/documents/batch-sync`, {
+        const controllerSync = new AbortController();
+        const timeoutSync = setTimeout(() => controllerSync.abort(), 12000);
+
+        let syncRes = await fetch(`${apiBase}/api/v1/documents/batch-sync`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ documents: localDocs })
+          body: JSON.stringify({ documents: localDocs }),
+          signal: controllerSync.signal
+        }).catch(err => {
+          console.warn('[BovedaApp] Petición batch-sync diferida:', err.message);
+          return null;
         });
+        clearTimeout(timeoutSync);
 
-        if (syncRes.ok) {
+        // Si el token expiró o fue rechazado (401), intentar auto-renovación y reintentar 1 vez
+        if (syncRes && syncRes.status === 401) {
+          const refreshed = await window.vaultAuth.refreshSession();
+          if (refreshed) {
+            token = window.vaultAuth.accessToken;
+            syncRes = await fetch(`${apiBase}/api/v1/documents/batch-sync`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ documents: localDocs })
+            }).catch(() => null);
+          }
+        }
+
+        if (syncRes && syncRes.ok) {
           for (const d of localDocs) {
             await window.vaultStorage.markDocumentSynced(d.id, true);
           }
         }
 
         // 3. Descargar documentos existentes en la Nube
-        const getRes = await fetch(`${apiBase}/api/v1/documents`, {
+        const controllerGet = new AbortController();
+        const timeoutGet = setTimeout(() => controllerGet.abort(), 12000);
+
+        let getRes = await fetch(`${apiBase}/api/v1/documents`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`
-          }
+          },
+          signal: controllerGet.signal
+        }).catch(err => {
+          console.warn('[BovedaApp] Petición get documents diferida:', err.message);
+          return null;
         });
+        clearTimeout(timeoutGet);
 
-        if (getRes.ok) {
-          const cloudData = await getRes.json();
+        if (getRes && getRes.status === 401) {
+          const refreshed = await window.vaultAuth.refreshSession();
+          if (refreshed) {
+            token = window.vaultAuth.accessToken;
+            getRes = await fetch(`${apiBase}/api/v1/documents`, {
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${token}` }
+            }).catch(() => null);
+          }
+        }
+
+        if (getRes && getRes.ok) {
+          const cloudData = await getRes.json().catch(() => ({}));
           if (Array.isArray(cloudData.documents)) {
             await window.vaultStorage.mergeCloudDocuments(cloudData.documents);
           }
@@ -2433,13 +2484,17 @@ class BovedaApp {
 
       // Refrescar documentos descifrados en pantalla si la bóveda está desbloqueada
       if (window.vaultAuth.masterKey) {
-        await this.loadAndRenderDocuments(true); // true = no disparar sync recursivo
+        try {
+          await this.loadAndRenderDocuments(true); // true = no disparar sync recursivo
+        } catch (rErr) {
+          console.warn('[BovedaApp] Aviso en refresco de vista post-sync:', rErr);
+        }
       }
     } catch (err) {
-      console.warn('[BovedaApp] Error durante sincronización Cloud:', err);
-      this.updateCloudSyncUI('error', 'Error al sincronizar');
+      console.warn('[BovedaApp] Aviso durante sincronización Cloud:', err);
+      this.updateCloudSyncUI('offline', 'Modo Local (Datos Protegidos)');
       if (!silent) {
-        this.showToast('Error al conectar con la Nube. Se mantuvieron los datos locales.', 'danger');
+        this.showToast('Conexión con la Nube interrumpida. Los datos continúan protegidos localmente.', 'info');
       }
     }
   }

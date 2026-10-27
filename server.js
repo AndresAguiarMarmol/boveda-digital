@@ -81,7 +81,14 @@ function loadDB() {
       const content = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed.users) && parsed.users.length > 0) {
-        db.users = parsed.users;
+        const loadedUsers = parsed.users;
+        const initialUsers = [...db.users];
+        for (const initU of initialUsers) {
+          if (!loadedUsers.some(u => u.email === initU.email)) {
+            loadedUsers.push(initU);
+          }
+        }
+        db.users = loadedUsers;
       }
       if (parsed.documents) {
         db.documents = new Map(Object.entries(parsed.documents));

@@ -2317,12 +2317,13 @@ class BovedaApp {
       if (res.simulated && res.code && simAlert && simVal) {
         simVal.textContent = res.code;
         simAlert.classList.remove('hidden');
+        this.showToast(`Código generado (modo offline): ${res.code}`, 'info');
       } else if (simAlert) {
         simAlert.classList.add('hidden');
+        this.showToast(`Código validador enviado a ${email}. Revisa tu bandeja de entrada o spam.`, 'success');
       }
 
       this.showOnboardingStep(2);
-      this.showToast(`Código validador enviado a ${email}`, 'success');
     } catch (err) {
       console.error('[Onboarding] Error:', err);
       this.showToast('Ocurrió un error al contactar el servicio de validación.', 'error');
@@ -2417,8 +2418,11 @@ class BovedaApp {
       if (res.simulated && res.code && simAlert && simVal) {
         simVal.textContent = res.code;
         simAlert.classList.remove('hidden');
+        this.showToast(`Nuevo código generado (modo offline): ${res.code}`, 'info');
+      } else {
+        if (simAlert) simAlert.classList.add('hidden');
+        this.showToast('Nuevo código validador despachado a tu correo. Revisa tu bandeja de entrada o spam.', 'info');
       }
-      this.showToast('Nuevo código validador despachado a tu correo.', 'info');
     } else {
       this.showToast(res.error || 'No se pudo reenviar el código.', 'error');
     }

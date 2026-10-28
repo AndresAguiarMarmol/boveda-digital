@@ -96,11 +96,29 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - *Ficha de Identificación del Usuario:* Exige obligatoriamente Nombre, Apellidos, Correo Electrónico y Teléfono de Contacto (Foto de perfil opcional pero soportada con cámara WebRTC/móvil y galería).
   - *Despacho de Código OTP y Servicio de Correo:* `POST /api/v1/auth/send-verification-code` genera un código numérico seguro de 6 dígitos con expiración de 15 minutos y lo despacha al correo vía SMTP nativo (`node:tls`/`node:net` con variables `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) o modo simulado para desarrollo y pruebas.
   - *Verificación e Ingreso:* `POST /api/v1/auth/verify-code` valida la coincidencia estricta y vigencia del código, tras lo cual se persiste el perfil, se sincroniza el correo con la cadena de solicitud de licencia `REQ|<DeviceID>|<correo>` y se da paso a la configuración del PIN maestro de la bóveda (`pin-setup`).
-- **Service Worker v8 con Renovación Inmediata de Recursos:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v8'`.
+- **Service Worker v9 con Renovación Inmediata de Recursos:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v9'`.
+- **Soporte SMTP Gmail y Resiliencia en Envío de Correo (Spec 008):**
+  - *Carga nativa de configuración `.env`:* `server.js` implementa `loadEnvFile()` nativo con cero dependencias externas. Protegido en `.gitignore` y `.dockerignore` para prevenir fugas de secretos.
+  - *Soporte nativo TLS 465 para Gmail:* `sendEmailNotification()` utiliza `tls.connect` nativo, sanitiza automáticamente contraseñas de aplicación de Google de 16 caracteres eliminando espacios en blanco (`abcd efgh ijkl mnop` -> `abcdefghijklmnop`), implementa cabeceras RFC 5322 (`Date`, `Message-ID`, `Subject` en UTF-8 Base64) y maneja respuestas multilínea SMTP.
+  - *Resiliencia en cliente ante contingencias de red o servidor:* Si el backend remoto responde con 401, 404 o 500, `VaultAuth.sendEmailVerificationCode` y `verifyEmailCode` activan inmediatamente la contingencia local con `sessionStorage`, impidiendo que el usuario quede bloqueado y permitiendo validar su correo localmente.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-27 — Spec 008: Soporte SMTP Gmail, Carga Nativa .env y Resiliencia en Envío de Códigos
+- **Soporte Completo de Gmail SMTP (`server.js`, `.env.example`, `.env`):**
+  - Creado `.env.example` con plantilla detallada para contraseñas de aplicación de Google y `.gitignore`/`.dockerignore` actualizados.
+  - Carga nativa de variables con `loadEnvFile()` en `server.js`.
+  - Eliminación automática de espacios en `SMTP_PASS` para tolerar contraseñas formateadas en bloques de 4 caracteres.
+  - Conexión TLS directa en puerto 465 con `servername: host` y cabeceras MIME estándar RFC 5322.
+- **Resiliencia de Cliente en Onboarding (`assets/js/auth.js`, `assets/js/app.js`):**
+  - En `VaultAuth.sendEmailVerificationCode` y `verifyEmailCode`: ante respuestas 401, 404 o 500 del servidor remoto, degradar suavemente a modo offline generando el código en `sessionStorage` para no bloquear al usuario en el primer uso.
+  - En `BovedaApp.handleOnboardingSubmitStep1`: mostrar feedback detallado en Toast indicando si el código se generó en modo offline o fue enviado a la bandeja de entrada.
+- **Service Worker v9 (`sw.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v9'`.
+- **Suite de Pruebas Automatizadas:**
+  - Añadidas pruebas de validación `SDD 008` en `tests/server.test.js` y `tests/boveda.test.js`. 60/60 pruebas pasando al 100%.
 
 ### 2026-10-27 — Spec 007: Identificación Obligatoria en Primer Uso y Validación por Código al Correo Electrónico
 - **Identificación de Primer Uso y Modal de Onboarding Ineludible (`index.html`, `assets/js/app.js`):**

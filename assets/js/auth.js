@@ -502,11 +502,13 @@ class VaultAuth {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, fullName })
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
           return { success: true, ...data };
+        } else if (res.status === 400 && data.error && data.error.includes('correo')) {
+          return { success: false, error: data.error };
         } else {
-          return { success: false, error: data.error || 'Error al enviar código' };
+          console.warn('[VaultAuth] Servidor devolvió status', res.status, '- activando contingencia offline local');
         }
       } catch (e) {
         console.warn('[VaultAuth] Error al contactar endpoint de código:', e);
@@ -544,11 +546,15 @@ class VaultAuth {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, code })
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (res.ok && data.verified) {
           return { success: true, verified: true };
-        } else {
+        } else if (res.ok && !data.verified) {
           return { success: false, verified: false, error: data.error || 'Código incorrecto' };
+        } else if (res.status === 400 && data.error && !data.error.includes('No se encontró')) {
+          return { success: false, verified: false, error: data.error };
+        } else {
+          console.warn('[VaultAuth] Servidor no pudo verificar (status ' + res.status + '). Intentando contingencia offline local...');
         }
       } catch (e) {
         console.warn('[VaultAuth] Error al contactar endpoint de verificación:', e);

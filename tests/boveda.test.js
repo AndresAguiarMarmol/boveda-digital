@@ -622,9 +622,9 @@ test('SDD 002: esPayloadCifradoValido descarta registros espurios y acepta datos
 test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js e index.html', () => {
   const rootDir = path.join(__dirname, '..');
 
-  // 1. sw.js debe ser v2, v3, v4, v5, v6, v7 o v8
+  // 1. sw.js debe ser v2, v3, v4, v5, v6, v7, v8 o v9
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7") || swContent.includes("boveda-digital-v8"), 'sw.js debe definir CACHE_NAME v2, v3, v4, v5, v6, v7 o v8 para forzar actualización en celulares');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7") || swContent.includes("boveda-digital-v8") || swContent.includes("boveda-digital-v9"), 'sw.js debe definir CACHE_NAME v2, v3, v4, v5, v6, v7, v8 o v9 para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1083,8 +1083,8 @@ test('SDD 007: Identificación Obligatoria en Primer Uso y Validación por Códi
   assert.ok(appJs.includes('handleOnboardingSubmitStep1'), 'app.js debe implementar handleOnboardingSubmitStep1()');
   assert.ok(appJs.includes('handleOnboardingSubmitStep2'), 'app.js debe implementar handleOnboardingSubmitStep2()');
 
-  // 5. Verificación de Service Worker v8
-  assert.ok(swJs.includes("'boveda-digital-v8'"), 'sw.js debe operar con la versión de caché boveda-digital-v8');
+  // 5. Verificación de Service Worker
+  assert.ok(/boveda-digital-v(8|9)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8 o v9');
 
   // 6. Prueba funcional de lógica en clase VaultLicenseManager
   const { VaultLicenseManager } = require('../assets/js/license.js');
@@ -1110,6 +1110,31 @@ test('SDD 007: Identificación Obligatoria en Primer Uso y Validación por Códi
   // Al desvincular, debe volver a false
   await mgr.clearUserProfile();
   assert.equal(await mgr.isUserIdentifiedAndVerified(), false, 'Tras desvincular debe volver a false');
+});
+
+test('SDD 008: Soporte SMTP Gmail y Resiliencia en Envío de Correo', async () => {
+  const rootDir = path.join(__dirname, '..');
+  const serverJs = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
+  const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
+  const envExample = fs.readFileSync(path.join(rootDir, '.env.example'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+
+  // 1. Verificación de plantilla de configuración .env.example
+  assert.ok(envExample.includes('SMTP_HOST=smtp.gmail.com'), '.env.example debe incluir configuración de Gmail');
+  assert.ok(envExample.includes('SMTP_PORT=465'), '.env.example debe indicar puerto seguro 465 SSL/TLS');
+  assert.ok(envExample.includes('SMTP_PASS'), '.env.example debe documentar contraseña de aplicación de 16 caracteres');
+
+  // 2. Verificación de backend en server.js
+  assert.ok(serverJs.includes('loadEnvFile'), 'server.js debe contar con loadEnvFile() para cargar .env nativamente');
+  assert.ok(serverJs.includes('replace(/\\s+/g'), 'server.js debe sanitizar espacios en contraseñas de Google');
+  assert.ok(serverJs.includes('tls.connect'), 'server.js debe usar tls.connect nativo para puerto 465');
+
+  // 3. Verificación de resiliencia en auth.js ante caídas de servidor
+  assert.ok(authJs.includes('activando contingencia offline local'), 'auth.js debe activar contingencia offline si el servidor remoto falla');
+  assert.ok(authJs.includes('_vault_otp_'), 'auth.js debe persistir OTP en sessionStorage ante contingencia');
+
+  // 4. Verificación de Service Worker v9
+  assert.ok(swJs.includes("'boveda-digital-v9'"), 'sw.js debe estar actualizado a boveda-digital-v9');
 });
 
 

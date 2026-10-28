@@ -2,7 +2,7 @@ process.env.NO_DISK_PERSIST = 'true';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { server, generateJWT, verifyJWT, hashPassword, db } = require('../server.js');
+const { server, generateJWT, verifyJWT, hashPassword, db, loadEnvFile, sendEmailNotification } = require('../server.js');
 
 let testPort = 3001;
 let serverInstance;
@@ -339,6 +339,48 @@ test('Servidor API: Inicialización y Suite de Endpoints', async (t) => {
       { email: 'verif.test@ejemplo.com', code: validCode }
     );
     assert.equal(reuseRes.status, 400);
+  });
+
+  await t.test('SDD 008: loadEnvFile parsea .env nativamente sin dependencias externas', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const os = require('node:os');
+
+    const tempEnvPath = path.join(os.tmpdir(), `test_${Date.now()}.env`);
+    fs.writeFileSync(tempEnvPath, [
+      '# Archivo de prueba',
+      'SMTP_TEST_HOST=smtp.gmail.com',
+      'SMTP_TEST_PORT=465',
+      'SMTP_TEST_PASS="abcd efgh ijkl mnop"',
+      'EMPTY_VAL=',
+      'PLAIN_VAL=hello_world'
+    ].join('\n'), 'utf8');
+
+    const envMap = loadEnvFile(tempEnvPath);
+    try { fs.unlinkSync(tempEnvPath); } catch {}
+
+    assert.equal(envMap.SMTP_TEST_HOST, 'smtp.gmail.com');
+    assert.equal(envMap.SMTP_TEST_PORT, '465');
+    assert.equal(envMap.SMTP_TEST_PASS, 'abcd efgh ijkl mnop');
+    assert.equal(envMap.EMPTY_VAL, '');
+    assert.equal(envMap.PLAIN_VAL, 'hello_world');
+  });
+
+  await t.test('SDD 008: sendEmailNotification retorna modo simulado seguro si faltan credenciales', async () => {
+    const oldHost = process.env.SMTP_HOST;
+    delete process.env.SMTP_HOST;
+
+    const result = await sendEmailNotification({
+      to: 'usuario.test@ejemplo.com',
+      subject: 'Código de Prueba',
+      text: 'Tu código es 123456',
+      html: '<b>123456</b>'
+    });
+
+    if (oldHost) process.env.SMTP_HOST = oldHost;
+
+    assert.equal(result.simulated, true);
+    assert.ok(result.messageId.startsWith('<simulated-'));
   });
 });
 

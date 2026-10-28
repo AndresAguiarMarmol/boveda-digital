@@ -9,3 +9,5 @@ node_modules
 memory.md
 specs
 Prompt Inicial.txt
+.env
+*.env

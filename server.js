@@ -18,55 +18,114 @@ const crypto = require('node:crypto');
 const net = require('node:net');
 const tls = require('node:tls');
 
+/**
+ * Carga variables de entorno desde archivo .env local si existe (0 dependencias)
+ */
+function loadEnvFile(customPath = null) {
+  const envPath = customPath || path.join(__dirname, '.env');
+  const loaded = {};
+  if (fs.existsSync(envPath)) {
+    try {
+      const content = fs.readFileSync(envPath, 'utf8');
+      const lines = content.split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx !== -1) {
+          const key = trimmed.substring(0, eqIdx).trim();
+          let val = trimmed.substring(eqIdx + 1).trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.substring(1, val.length - 1);
+          }
+          loaded[key] = val;
+          if (val.length > 0 && !process.env[key]) {
+            process.env[key] = val;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Env] No se pudo leer archivo .env:', err.message);
+    }
+  }
+  return loaded;
+}
+loadEnvFile();
+
 // Almacén de códigos de verificación OTP en memoria (email -> { code, expiresAt, attempts })
 const verificationCodes = new Map();
 
 /**
  * Envío de correo electrónico vía protocolo SMTP o modo simulado (0 dependencias externas)
+ * Optimizado para servidores estándar y Gmail (smtp.gmail.com con Contraseña de Aplicación)
  * @param {object} options { to, subject, html, text }
- * @returns {Promise<{ success: boolean, simulated: boolean, message?: string }>}
+ * @returns {Promise<{ success: boolean, simulated: boolean, message?: string, error?: string }>}
  */
 async function sendEmailNotification({ to, subject, html, text }) {
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '587', 10);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM || (user ? user : 'seguridad@bovedadigital.com');
+  const host = (process.env.SMTP_HOST || '').trim();
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  const user = (process.env.SMTP_USER || '').trim();
+  const rawPass = (process.env.SMTP_PASS || '').trim();
+  // Sanitizar contraseña de aplicación de Google (eliminar espacios que Google añade en bloques de 4 letras)
+  const pass = rawPass.replace(/\s+/g, '');
+  const from = (process.env.SMTP_FROM || user || 'seguridad@bovedadigital.com').trim();
 
-  if (!host || !user) {
-    console.log(`[Email Service Simulado] Destinatario: ${to} | Asunto: "${subject}"`);
-    return { success: true, simulated: true, message: 'Correo simulado (sin servidor SMTP configurado)' };
+  if (!host || !user || !pass) {
+    console.log(`[Email Service Simulado] Destinatario: ${to} | Asunto: "${subject}" (Configura SMTP_USER y SMTP_PASS en .env para envío real)`);
+    return { success: true, simulated: true, messageId: `<simulated-${Date.now()}@bovedadigital.local>`, message: 'Correo simulado (sin servidor SMTP o contraseña configurada)' };
   }
 
   return new Promise((resolve) => {
     try {
       const isSecure = port === 465;
+      const socketOptions = isSecure 
+        ? { host, port, rejectUnauthorized: false, servername: host }
+        : { host, port };
+
       const socket = isSecure 
-        ? tls.connect({ host, port, rejectUnauthorized: false })
-        : net.createConnection({ host, port });
+        ? tls.connect(socketOptions)
+        : net.createConnection(socketOptions);
 
       let step = 0;
       let buffer = '';
+      let isDone = false;
 
-      socket.setTimeout(10000, () => {
+      socket.setTimeout(15000, () => {
+        if (isDone) return;
+        isDone = true;
         socket.destroy();
-        console.warn('[SMTP] Timeout en conexión SMTP, fallback a simulado');
-        resolve({ success: true, simulated: true, fallback: true });
+        console.warn('[SMTP] Timeout en conexión SMTP, activando fallback a simulado');
+        resolve({ success: true, simulated: true, fallback: true, message: 'Timeout en conexión con servidor de correo' });
       });
 
       socket.on('error', (err) => {
+        if (isDone) return;
+        isDone = true;
         console.warn('[SMTP] Error de socket SMTP:', err.message);
-        resolve({ success: true, simulated: true, fallback: true });
+        resolve({ success: true, simulated: true, fallback: true, error: err.message });
       });
 
       socket.on('data', (chunk) => {
+        if (isDone) return;
         buffer += chunk.toString();
         const lines = buffer.split('\r\n');
-        buffer = lines.pop();
+        buffer = lines.pop(); // conservar remanente incompleto
 
         for (const line of lines) {
           const code = parseInt(line.substring(0, 3), 10);
-          if (isNaN(code) || line.charAt(3) === '-') continue;
+          if (isNaN(code)) continue;
+
+          // Manejo de códigos de error SMTP (4xx o 5xx)
+          if (code >= 400) {
+            isDone = true;
+            console.warn(`[SMTP Error ${code}]`, line);
+            socket.destroy();
+            resolve({ success: true, simulated: true, fallback: true, error: `Error SMTP ${code}: ${line}` });
+            return;
+          }
+
+          // Ignorar líneas intermedias multilínea (con guión '-')
+          if (line.charAt(3) === '-') continue;
 
           if (step === 0 && code === 220) {
             step++;
@@ -85,15 +144,20 @@ async function sendEmailNotification({ to, subject, html, text }) {
             socket.write(`MAIL FROM:<${from}>\r\n`);
           } else if (step === 5 && code === 250) {
             step++;
-            socket.write(`RCPT TO:<${to}>\r\n`);
+            socket.write(`RCPT TO:<${to.trim()}>\r\n`);
           } else if (step === 6 && code === 250) {
             step++;
             socket.write(`DATA\r\n`);
           } else if (step === 7 && code === 354) {
             step++;
+            const msgDate = new Date().toUTCString();
+            const fromDomain = from.split('@')[1] || 'bovedadigital.com';
+            const msgId = `<${Date.now()}.${crypto.randomBytes(6).toString('hex')}@${fromDomain}>`;
             const rawMessage = [
-              `From: Bóveda Digital <${from}>`,
-              `To: <${to}>`,
+              `From: "Bóveda Digital" <${from}>`,
+              `To: <${to.trim()}>`,
+              `Date: ${msgDate}`,
+              `Message-ID: ${msgId}`,
               `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
               `MIME-Version: 1.0`,
               `Content-Type: text/html; charset=UTF-8`,
@@ -105,6 +169,8 @@ async function sendEmailNotification({ to, subject, html, text }) {
             socket.write(rawMessage);
           } else if (step === 8 && code === 250) {
             step++;
+            isDone = true;
+            console.log(`[SMTP] Correo enviado exitosamente a: ${to}`);
             socket.write(`QUIT\r\n`);
             socket.end();
             resolve({ success: true, simulated: false });
@@ -113,7 +179,7 @@ async function sendEmailNotification({ to, subject, html, text }) {
       });
     } catch (e) {
       console.warn('[SMTP] Excepción al enviar correo:', e.message);
-      resolve({ success: true, simulated: true, fallback: true });
+      resolve({ success: true, simulated: true, fallback: true, error: e.message });
     }
   });
 }
@@ -827,5 +893,6 @@ module.exports = {
   verifyJWT,
   hashPassword,
   verificationCodes,
-  sendEmailNotification
+  sendEmailNotification,
+  loadEnvFile
 };

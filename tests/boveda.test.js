@@ -624,7 +624,7 @@ test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js 
 
   // 1. sw.js debe ser v2, v3, v4, v5, v6, v7, v8 o v9
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7") || swContent.includes("boveda-digital-v8") || swContent.includes("boveda-digital-v9"), 'sw.js debe definir CACHE_NAME v2, v3, v4, v5, v6, v7, v8 o v9 para forzar actualización en celulares');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7") || swContent.includes("boveda-digital-v8") || swContent.includes("boveda-digital-v9") || swContent.includes("boveda-digital-v10"), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1084,7 +1084,7 @@ test('SDD 007: Identificación Obligatoria en Primer Uso y Validación por Códi
   assert.ok(appJs.includes('handleOnboardingSubmitStep2'), 'app.js debe implementar handleOnboardingSubmitStep2()');
 
   // 5. Verificación de Service Worker
-  assert.ok(/boveda-digital-v(8|9)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8 o v9');
+  assert.ok(/boveda-digital-v(8|9|10)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8, v9 o v10');
 
   // 6. Prueba funcional de lógica en clase VaultLicenseManager
   const { VaultLicenseManager } = require('../assets/js/license.js');
@@ -1118,6 +1118,7 @@ test('SDD 008: Soporte SMTP Gmail y Resiliencia en Envío de Correo', async () =
   const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
   const envExample = fs.readFileSync(path.join(rootDir, '.env.example'), 'utf8');
   const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
 
   // 1. Verificación de plantilla de configuración .env.example
   assert.ok(envExample.includes('SMTP_HOST=smtp.gmail.com'), '.env.example debe incluir configuración de Gmail');
@@ -1133,8 +1134,14 @@ test('SDD 008: Soporte SMTP Gmail y Resiliencia en Envío de Correo', async () =
   assert.ok(authJs.includes('activando contingencia offline local'), 'auth.js debe activar contingencia offline si el servidor remoto falla');
   assert.ok(authJs.includes('_vault_otp_'), 'auth.js debe persistir OTP en sessionStorage ante contingencia');
 
-  // 4. Verificación de Service Worker v9
-  assert.ok(swJs.includes("'boveda-digital-v9'"), 'sw.js debe estar actualizado a boveda-digital-v9');
+  // 4. Verificación de Service Worker v10
+  assert.ok(/boveda-digital-v(9|10)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9 o v10');
+
+  // 5. Verificación de prevención de bloqueo de teclado en modales e inputs
+  assert.ok(appJs.includes('isInputFocused || isModalOpen'), 'app.js no debe interceptar teclado si hay un input enfocado o un modal activo');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  assert.ok(html.includes('id="onboarding-otp-input"'), 'index.html debe tener el input onboarding-otp-input');
+  assert.ok(html.includes('oninput="this.value = this.value.replace(/[^0-9]/g'), 'onboarding-otp-input debe sanitizar la entrada de solo números');
 });
 
 

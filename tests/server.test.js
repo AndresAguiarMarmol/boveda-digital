@@ -4,6 +4,11 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const { server, generateJWT, verifyJWT, hashPassword, db, loadEnvFile, sendEmailNotification } = require('../server.js');
 
+// Forzar modo simulado para pruebas unitarias herméticas y rápidas
+delete process.env.SMTP_HOST;
+delete process.env.SMTP_USER;
+delete process.env.SMTP_PASS;
+
 let testPort = 3001;
 let serverInstance;
 

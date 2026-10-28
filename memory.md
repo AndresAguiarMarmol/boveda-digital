@@ -96,15 +96,29 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - *Ficha de Identificación del Usuario:* Exige obligatoriamente Nombre, Apellidos, Correo Electrónico y Teléfono de Contacto (Foto de perfil opcional pero soportada con cámara WebRTC/móvil y galería).
   - *Despacho de Código OTP y Servicio de Correo:* `POST /api/v1/auth/send-verification-code` genera un código numérico seguro de 6 dígitos con expiración de 15 minutos y lo despacha al correo vía SMTP nativo (`node:tls`/`node:net` con variables `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) o modo simulado para desarrollo y pruebas.
   - *Verificación e Ingreso:* `POST /api/v1/auth/verify-code` valida la coincidencia estricta y vigencia del código, tras lo cual se persiste el perfil, se sincroniza el correo con la cadena de solicitud de licencia `REQ|<DeviceID>|<correo>` y se da paso a la configuración del PIN maestro de la bóveda (`pin-setup`).
-- **Service Worker v9 con Renovación Inmediata de Recursos:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v9'`.
+- **Service Worker v10 con Renovación Inmediata de Recursos:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v10'`.
 - **Soporte SMTP Gmail y Resiliencia en Envío de Correo (Spec 008):**
   - *Carga nativa de configuración `.env`:* `server.js` implementa `loadEnvFile()` nativo con cero dependencias externas. Protegido en `.gitignore` y `.dockerignore` para prevenir fugas de secretos.
   - *Soporte nativo TLS 465 para Gmail:* `sendEmailNotification()` utiliza `tls.connect` nativo, sanitiza automáticamente contraseñas de aplicación de Google de 16 caracteres eliminando espacios en blanco (`abcd efgh ijkl mnop` -> `abcdefghijklmnop`), implementa cabeceras RFC 5322 (`Date`, `Message-ID`, `Subject` en UTF-8 Base64) y maneja respuestas multilínea SMTP.
+  - *Despliegue Serverless en Google Cloud Run:* Variables SMTP y endpoints de validación desplegados en Cloud Run con 100% de tráfico activo.
+  - *Protección de Foco e Intercepción de Teclado en UI:* En `assets/js/app.js`, el listener global `keydown` verifica `isInputFocused` y `isModalOpen` para evitar que el teclado numérico de `pin-lock` secuestre las pulsaciones en los campos de formulario y modales como `#onboarding-otp-input`.
   - *Resiliencia en cliente ante contingencias de red o servidor:* Si el backend remoto responde con 401, 404 o 500, `VaultAuth.sendEmailVerificationCode` y `verifyEmailCode` activan inmediatamente la contingencia local con `sessionStorage`, impidiendo que el usuario quede bloqueado y permitiendo validar su correo localmente.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-27 — Corrección Paso 2/2 Onboarding (Captura de Teclado) y Despliegue SMTP en Cloud Run
+- **Desbloqueo de Escritura en Paso 2/2 (`assets/js/app.js`, `index.html`):**
+  - Corregido el manejador global de teclado en `app.js` para que no capture ni aplique `e.preventDefault()` en las teclas numéricas ni retroceso cuando el foco está sobre un `<input>` o cuando un diálogo modal (`<dialog open>`) está activo.
+  - Agregado filtro sanitizador `oninput` en `#onboarding-otp-input` para admitir números exclusivamente de forma fluida.
+- **Despliegue y Activación de Correo Real en Cloud Run (`gcloud run services update`):**
+  - Actualizado el contenedor y las variables de entorno en Cloud Run (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`).
+  - Verificado el envío real de correos mediante Gmail hacia `andres.aguiar.marmol@gmail.com` con status HTTP 200 y `simulated: false`.
+- **Service Worker v10 (`sw.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v10'`.
+- **Pruebas Automatizadas:**
+  - 60/60 pruebas unitarias pasando al 100% en verde.
 
 ### 2026-10-27 — Spec 008: Soporte SMTP Gmail, Carga Nativa .env y Resiliencia en Envío de Códigos
 - **Soporte Completo de Gmail SMTP (`server.js`, `.env.example`, `.env`):**

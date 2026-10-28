@@ -2985,6 +2985,12 @@ class BovedaApp {
     window.addEventListener('keydown', (e) => {
       const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
       const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+      const isModalOpen = !!document.querySelector('dialog[open]');
+
+      // Si el foco está en un campo de texto o hay un modal abierto (ej. onboarding), no interceptar teclas
+      if (isInputFocused || isModalOpen) {
+        return;
+      }
 
       if (this.activeView === 'pin-lock') {
         if (e.key >= '0' && e.key <= '9') {
@@ -3000,7 +3006,7 @@ class BovedaApp {
           }
         }
       } else if (this.activeView === 'pin-setup') {
-        if (!isInputFocused && e.key >= '0' && e.key <= '9') {
+        if (e.key >= '0' && e.key <= '9') {
           const pin1 = document.getElementById('input-new-pin');
           if (pin1) {
             pin1.focus();

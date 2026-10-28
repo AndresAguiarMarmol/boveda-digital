@@ -624,7 +624,7 @@ test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js 
 
   // 1. sw.js debe ser v2, v3, v4, v5, v6, v7, v8 o v9
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7") || swContent.includes("boveda-digital-v8") || swContent.includes("boveda-digital-v9") || swContent.includes("boveda-digital-v10") || swContent.includes("boveda-digital-v11"), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
+  assert.ok(/boveda-digital-v(2|3|4|5|6|7|8|9|10|11|12)/.test(swContent), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1084,7 +1084,7 @@ test('SDD 007: Identificación Obligatoria en Primer Uso y Validación por Códi
   assert.ok(appJs.includes('handleOnboardingSubmitStep2'), 'app.js debe implementar handleOnboardingSubmitStep2()');
 
   // 5. Verificación de Service Worker
-  assert.ok(/boveda-digital-v(8|9|10|11)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8, v9, v10 o v11');
+  assert.ok(/boveda-digital-v(8|9|10|11|12)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8 a v12');
 
   // 6. Prueba funcional de lógica en clase VaultLicenseManager
   const { VaultLicenseManager } = require('../assets/js/license.js');
@@ -1135,7 +1135,7 @@ test('SDD 008: Soporte SMTP Gmail y Resiliencia en Envío de Correo', async () =
   assert.ok(authJs.includes('_vault_otp_'), 'auth.js debe persistir OTP en sessionStorage ante contingencia');
 
   // 4. Verificación de Service Worker
-  assert.ok(/boveda-digital-v(9|10|11)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9, v10 o v11');
+  assert.ok(/boveda-digital-v(9|10|11|12)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9 a v12');
 
   // 5. Verificación de prevención de bloqueo de teclado en modales e inputs
   assert.ok(appJs.includes('isInputFocused || isModalOpen'), 'app.js no debe interceptar teclado si hay un input enfocado o un modal activo');
@@ -1166,8 +1166,33 @@ test('SDD 009: Simplificación de Interfaz del Navbar (Eliminación de botones P
   assert.ok(headerHtml.includes('id="btn-backup-vault"'), 'El navbar debe conservar el botón de Respaldar');
   assert.ok(headerHtml.includes('id="btn-restore-vault"'), 'El navbar debe conservar el botón de Recuperar');
 
-  // 3. Verificación de Service Worker v11
-  assert.ok(swJs.includes("'boveda-digital-v11'"), 'sw.js debe estar actualizado a boveda-digital-v11');
+  // 3. Verificación de Service Worker v11 o superior
+  assert.ok(/boveda-digital-v(11|12)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v11 o v12');
+});
+
+test('SDD 010: Eliminación de la Solicitud de Clave para la Bóveda Protegida y Auto-Desbloqueo', () => {
+  const rootDir = path.join(__dirname, '..');
+  const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+
+  // 1. VaultAuth debe implementar el método autoUnlock
+  assert.ok(authJs.includes('async autoUnlock('), 'VaultAuth debe definir el método autoUnlock');
+
+  // 2. app.js debe utilizar autoUnlock y acceder directamente a dashboard en init(), login y onboarding
+  assert.ok(appJs.includes('await window.vaultAuth.autoUnlock()'), 'app.js debe invocar autoUnlock para acceso directo');
+  
+  // En init(), no debe redirigir a pin-lock ni pin-setup
+  const initMatch = appJs.match(/const authState = await window\.vaultAuth\.init\(\);[\s\S]*?this\.switchView\('dashboard'\);/);
+  assert.ok(initMatch, 'init() debe auto-desbloquear e ir directo a dashboard');
+  assert.ok(!initMatch[0].includes("this.switchView('pin-lock')"), 'init() no debe mostrar la vista pin-lock');
+  assert.ok(!initMatch[0].includes("this.switchView('pin-setup')"), 'init() no debe mostrar la vista pin-setup');
+
+  // En loginForm, debe acceder a dashboard con autoUnlock
+  assert.ok(appJs.includes("await window.vaultAuth.autoUnlock();\n          this.switchView('dashboard');"), 'login debe auto-desbloquear y mostrar dashboard');
+
+  // 3. Service Worker debe estar en v12
+  assert.ok(swJs.includes("'boveda-digital-v12'"), 'sw.js debe estar en versión boveda-digital-v12');
 });
 
 

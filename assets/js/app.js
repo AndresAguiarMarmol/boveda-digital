@@ -93,15 +93,11 @@ class BovedaApp {
       this.showToast('¡Bóveda Digital instalada con éxito!', 'success');
     });
 
-    // Evaluar estado de sesión
+    // Evaluar estado de sesión (Spec 010: Acceso directo sin solicitud de clave a la Bóveda Protegida)
     const authState = await window.vaultAuth.init();
-    if (authState.status === 'LOCKED') {
-      const hasPin = await window.vaultAuth.hasConfiguredPin();
-      if (hasPin) {
-        this.switchView('pin-lock');
-      } else {
-        this.switchView('pin-setup');
-      }
+    if (authState.status === 'LOCKED' || authState.status === 'AUTHENTICATED') {
+      await window.vaultAuth.autoUnlock();
+      this.switchView('dashboard');
     } else {
       this.switchView('auth');
     }
@@ -245,8 +241,9 @@ class BovedaApp {
    */
   async loadAndRenderDocuments(skipCloudSync = false) {
     if (!window.vaultAuth.masterKey) {
-      this.showToast('Bóveda bloqueada. Ingrese su PIN.', 'warning');
-      this.switchView('pin-lock');
+      await window.vaultAuth.autoUnlock();
+    }
+    if (!window.vaultAuth.masterKey) {
       return;
     }
 
@@ -2382,13 +2379,9 @@ class BovedaApp {
       await this.renderHeaderUserProfile();
       this.updateLicenseUI();
 
-      // Proseguir con el flujo de inicialización de la app
-      const hasPin = await window.vaultAuth.hasConfiguredPin();
-      if (hasPin) {
-        this.switchView('pin-lock');
-      } else {
-        this.switchView('pin-setup');
-      }
+      // Proseguir con el flujo de inicialización de la app (Spec 010: acceso directo al Dashboard)
+      await window.vaultAuth.autoUnlock();
+      this.switchView('dashboard');
     } catch (err) {
       console.error('[Onboarding] Error al verificar código:', err);
       this.showToast('Error al validar el código.', 'error');
@@ -2489,8 +2482,8 @@ class BovedaApp {
   lockVaultNow() {
     window.vaultAuth.lockVault();
     this.unlockedDocuments = [];
-    this.showToast('Bóveda bloqueada de forma segura', 'warning');
-    this.switchView('pin-lock');
+    this.showToast('Bóveda protegida', 'info');
+    this.switchView('dashboard');
   }
 
   /**
@@ -2500,12 +2493,9 @@ class BovedaApp {
     await window.vaultAuth.resetPin();
     this.currentPinInput = '';
     this.updatePinDots();
-    const pin1 = document.getElementById('input-new-pin');
-    const pin2 = document.getElementById('input-confirm-pin');
-    if (pin1) pin1.value = '';
-    if (pin2) pin2.value = '';
-    this.showToast('PIN restablecido. Ingresa tu nuevo PIN.', 'info');
-    this.switchView('pin-setup');
+    await window.vaultAuth.autoUnlock();
+    this.showToast('Bóveda re-inicializada de forma transparente.', 'info');
+    this.switchView('dashboard');
   }
 
   /**
@@ -2940,11 +2930,8 @@ class BovedaApp {
         const pass = document.getElementById('login-password').value;
         const res = await window.vaultAuth.login(email, pass);
         if (res.success) {
-          if (res.requiresPinSetup) {
-            this.switchView('pin-setup');
-          } else {
-            this.switchView('pin-lock');
-          }
+          await window.vaultAuth.autoUnlock();
+          this.switchView('dashboard');
         } else {
           this.showToast(res.error || 'Error al iniciar sesión', 'danger');
         }

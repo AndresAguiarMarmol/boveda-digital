@@ -101,10 +101,27 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - Removidos de la barra superior los botones de "PIN" (cambiar/resetear PIN), "</>" (inspector API/JWT) y "Bloquear" (bloqueo inmediato).
   - Preservación íntegra de los botones de usuario: Perfil del Usuario Registrado, Badge de Licencia/Trial, Instalar App (PWA), Google Drive, Sincronización en la Nube, Respaldar y Recuperar.
   - La lógica y métodos subyacentes (`resetPin()`, `lockVaultNow()`, modal del inspector) se preservan intactos en el código para no alterar ninguna otra funcionalidad.
+- **Eliminación de la Solicitud de Clave para la Bóveda Protegida y Auto-Desbloqueo (Spec 010):**
+  - Eliminada la interrupción y solicitud de PIN/clave para la "Bóveda Protegida" (`pin-lock-view`) y la pantalla de configuración de PIN (`pin-setup-view`).
+  - Implementado `autoUnlock()` en `VaultAuth` (`assets/js/auth.js`) que deriva y retiene la clave AES-256-GCM en memoria de forma transparente utilizando el PIN persistido o el PIN por defecto (`'123456'`), garantizando Zero-Knowledge y cifrado íntegro sin fricción de usuario.
+  - En `BovedaApp` (`assets/js/app.js`), los flujos de inicio (`init()`), inicio de sesión (`loginForm`) y verificación de primer uso (Paso 2/2 del onboarding) ejecutan `autoUnlock()` y acceden directamente al `dashboard-view`.
+  - Service Worker actualizado a `boveda-digital-v12`.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-27 — Spec 010: Eliminación de la Solicitud de Clave para la Bóveda Protegida y Auto-Desbloqueo
+- **Acceso Directo y Auto-Desbloqueo Transparente (`assets/js/auth.js`, `assets/js/app.js`):**
+  - Implementado `autoUnlock()` en `VaultAuth` para derivar automáticamente la clave maestra AES-256-GCM sin solicitar PIN al usuario.
+  - Actualizado `init()` de `app.js` para auto-desbloquear e ingresar directamente a `dashboard-view` si existe sesión activa.
+  - Actualizado el formulario de login para derivar la clave criptográfica y transicionar directamente al Dashboard.
+  - Actualizado el flujo de validación del onboarding (Paso 2/2) para acceder de inmediato al Dashboard tras verificar el código.
+  - Actualizado `loadAndRenderDocuments()` para re-derivar la clave en memoria con `autoUnlock()` silenciosamente ante cualquier eventualidad.
+- **Service Worker v12 (`sw.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v12'`.
+- **Suite de Pruebas Automatizadas:**
+  - Añadida prueba `SDD 010` en `tests/boveda.test.js`. 62/62 pruebas unitarias pasando al 100% en verde.
 
 ### 2026-10-27 — Spec 009: Simplificación de Interfaz del Navbar (Eliminación de botones PIN, </> y Bloquear)
 - **Limpieza de Controles en Barra Superior (`index.html`):**

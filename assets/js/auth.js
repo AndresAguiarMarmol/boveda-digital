@@ -84,6 +84,10 @@ class VaultAuth {
     const userSalt = await window.vaultStorage.getSetting('userSalt');
 
     if (savedUser && savedToken) {
+      if (savedUser.email === 'atleta@halterofilia.com' || savedUser.email === 'atleta@alterofilia.com') {
+        savedUser.email = 'su-usuario@dominio.com';
+        window.vaultStorage.setSetting('currentUser', savedUser).catch(() => {});
+      }
       this.currentUser = savedUser;
       this.accessToken = savedToken;
       this.refreshToken = savedRefreshToken;

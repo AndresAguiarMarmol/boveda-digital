@@ -3304,9 +3304,13 @@ class BovedaApp {
       const cadEl = document.getElementById('lock-cadena-solicitud');
       const errEl = document.getElementById('lock-activation-error');
 
+      let displayEmail = lic.email;
+      if (!displayEmail || displayEmail === 'atleta@halterofilia.com' || displayEmail === 'atleta@alterofilia.com') {
+        displayEmail = 'su-usuario@dominio.com';
+      }
       if (devEl) devEl.textContent = lic.deviceId;
-      if (emailInput && !emailInput.value) emailInput.value = lic.email;
-      if (emailEl) emailEl.textContent = lic.email;
+      if (emailInput) emailInput.value = displayEmail;
+      if (emailEl) emailEl.textContent = displayEmail;
       if (cadEl) cadEl.value = lic.cadenaSolicitud;
       if (errEl) {
         errEl.textContent = '';
@@ -3361,8 +3365,12 @@ class BovedaApp {
       }
     }
 
+    let displayEmail = lic.email;
+    if (!displayEmail || displayEmail === 'atleta@halterofilia.com' || displayEmail === 'atleta@alterofilia.com') {
+      displayEmail = 'su-usuario@dominio.com';
+    }
     if (devId) devId.textContent = lic.deviceId;
-    if (emailInput) emailInput.value = lic.email;
+    if (emailInput) emailInput.value = displayEmail;
     if (cadena) cadena.value = lic.cadenaSolicitud;
     if (inputToken) inputToken.value = '';
     if (errEl) {

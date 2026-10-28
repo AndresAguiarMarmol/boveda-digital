@@ -219,6 +219,14 @@ const db = {
       fullName: 'Usuario de Dispositivo (Halterofilia)',
       plan: 'pro',
       cryptoSalt: 'ae8713595fed1e759db1062454187513'
+    },
+    {
+      id: 'usr_device_su_usuario',
+      email: 'su-usuario@dominio.com',
+      passwordHash: hashPassword('PasswordSeguro123!'),
+      fullName: 'Usuario de Dispositivo',
+      plan: 'pro',
+      cryptoSalt: 'ae8713595fed1e759db1062454187513'
     }
   ],
   documents: new Map(), // key: user_id, value: Array de docs cifrados

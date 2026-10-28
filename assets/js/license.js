@@ -297,6 +297,15 @@ class VaultLicenseManager {
         await window.vaultStorage.setSetting('vault_user_email', userEmail);
       }
     }
+    if (userEmail === 'atleta@halterofilia.com' || userEmail === 'atleta@alterofilia.com') {
+      userEmail = 'su-usuario@dominio.com';
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('vault_user_email', userEmail);
+      }
+      if (typeof window !== 'undefined' && window.vaultStorage) {
+        await window.vaultStorage.setSetting('vault_user_email', userEmail);
+      }
+    }
     this.userEmail = userEmail;
 
     // 3. Resolver o inicializar fecha de inicio del Trial (7 días)
@@ -543,10 +552,13 @@ class VaultLicenseManager {
     const daysRemaining = Math.ceil(msRemaining / (24 * 60 * 60 * 1000));
     const hoursRemaining = Math.ceil(msRemaining / (60 * 60 * 1000));
 
-    const effectiveEmail = (email && email.trim().toLowerCase()) ||
+    let effectiveEmail = (email && email.trim().toLowerCase()) ||
                            (typeof window !== 'undefined' && window.vaultAuth?.currentUser?.email) ||
                            this.userEmail ||
-                           (this.deviceId ? `usuario_${this.deviceId.replace('dev_', '').substring(0, 8)}@boveda.com` : 'usuario@boveda.com');
+                           (this.deviceId ? `usuario_${this.deviceId.replace('dev_', '').substring(0, 8)}@boveda.com` : 'su-usuario@dominio.com');
+    if (effectiveEmail === 'atleta@halterofilia.com' || effectiveEmail === 'atleta@alterofilia.com') {
+      effectiveEmail = 'su-usuario@dominio.com';
+    }
     const cadena = generarCadenaSolicitud(this.deviceId, effectiveEmail);
 
     return {

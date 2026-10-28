@@ -111,6 +111,18 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-28 — Estandarización de Correo en Módulo de Licencia ("su-usuario@dominio.com")
+- **Actualización de Identificador, Inputs y Placeholders de Usuario (`index.html`, `assets/js/license.js`, `assets/js/app.js`, `assets/js/auth.js`, `server.js`):**
+  - En [index.html](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/index.html): asignado el valor y placeholder predeterminados `su-usuario@dominio.com` en los campos `#info-user-email-input` ("Usuario / Correo Electrónico") y `#lock-user-email-input`, además de actualizar el botón de acceso rápido de usuario de dispositivo.
+  - En [assets/js/app.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/app.js): en `openLicenseModal()` y `checkLicenseLock()`, implementada la sanitización y sobreescritura de visualización para que cualquier valor residual o vacío de `atleta@halterofilia.com`/`atleta@alterofilia.com` se presente como `su-usuario@dominio.com` en el campo y en la cadena de solicitud.
+  - En [assets/js/license.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/license.js): en `init()` y `getEstadoLicencia()`, migración y normalización reactiva de `vault_user_email` hacia `su-usuario@dominio.com`.
+  - En [assets/js/auth.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/auth.js): en `init()`, auto-migración de la sesión persistida hacia `su-usuario@dominio.com`.
+  - Registrado `su-usuario@dominio.com` en `server.js` como usuario predefinido de dispositivo, preservando retrocompatibilidad con `atleta@halterofilia.com`.
+- **Sincronización con Ecosistema Halterofilia (`Halterofilia/app.src.js`, `Halterofilia/index.backup.html`):**
+  - Reemplazado el correo de contingencia `atleta@halterofilia.com` por `su-usuario@dominio.com` en el cálculo de `reqCode` del módulo "Licencia Activa" de Halterofilia y re-compilado con `node scripts/protect.js`.
+- **Suite de Pruebas:**
+  - 62/62 pruebas pasando al 100% en verde.
+
 ### 2026-10-27 — Spec 010: Eliminación de la Solicitud de Clave para la Bóveda Protegida y Auto-Desbloqueo
 - **Acceso Directo y Auto-Desbloqueo Transparente (`assets/js/auth.js`, `assets/js/app.js`):**
   - Implementado `autoUnlock()` en `VaultAuth` para derivar automáticamente la clave maestra AES-256-GCM sin solicitar PIN al usuario.

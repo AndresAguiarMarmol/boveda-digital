@@ -96,17 +96,26 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - *Ficha de Identificación del Usuario:* Exige obligatoriamente Nombre, Apellidos, Correo Electrónico y Teléfono de Contacto (Foto de perfil opcional pero soportada con cámara WebRTC/móvil y galería).
   - *Despacho de Código OTP y Servicio de Correo:* `POST /api/v1/auth/send-verification-code` genera un código numérico seguro de 6 dígitos con expiración de 15 minutos y lo despacha al correo vía SMTP nativo (`node:tls`/`node:net` con variables `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) o modo simulado para desarrollo y pruebas.
   - *Verificación e Ingreso:* `POST /api/v1/auth/verify-code` valida la coincidencia estricta y vigencia del código, tras lo cual se persiste el perfil, se sincroniza el correo con la cadena de solicitud de licencia `REQ|<DeviceID>|<correo>` y se da paso a la configuración del PIN maestro de la bóveda (`pin-setup`).
-- **Service Worker v10 con Renovación Inmediata de Recursos:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v10'`.
-- **Soporte SMTP Gmail y Resiliencia en Envío de Correo (Spec 008):**
-  - *Carga nativa de configuración `.env`:* `server.js` implementa `loadEnvFile()` nativo con cero dependencias externas. Protegido en `.gitignore` y `.dockerignore` para prevenir fugas de secretos.
-  - *Soporte nativo TLS 465 para Gmail:* `sendEmailNotification()` utiliza `tls.connect` nativo, sanitiza automáticamente contraseñas de aplicación de Google de 16 caracteres eliminando espacios en blanco (`abcd efgh ijkl mnop` -> `abcdefghijklmnop`), implementa cabeceras RFC 5322 (`Date`, `Message-ID`, `Subject` en UTF-8 Base64) y maneja respuestas multilínea SMTP.
-  - *Despliegue Serverless en Google Cloud Run:* Variables SMTP y endpoints de validación desplegados en Cloud Run con 100% de tráfico activo.
-  - *Protección de Foco e Intercepción de Teclado en UI:* En `assets/js/app.js`, el listener global `keydown` verifica `isInputFocused` y `isModalOpen` para evitar que el teclado numérico de `pin-lock` secuestre las pulsaciones en los campos de formulario y modales como `#onboarding-otp-input`.
-  - *Resiliencia en cliente ante contingencias de red o servidor:* Si el backend remoto responde con 401, 404 o 500, `VaultAuth.sendEmailVerificationCode` y `verifyEmailCode` activan inmediatamente la contingencia local con `sessionStorage`, impidiendo que el usuario quede bloqueado y permitiendo validar su correo localmente.
+- **Service Worker v11 con Renovación Inmediata de Recursos:** `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v11'`.
+- **Simplificación de Interfaz del Navbar (Spec 009):**
+  - Removidos de la barra superior los botones de "PIN" (cambiar/resetear PIN), "</>" (inspector API/JWT) y "Bloquear" (bloqueo inmediato).
+  - Preservación íntegra de los botones de usuario: Perfil del Usuario Registrado, Badge de Licencia/Trial, Instalar App (PWA), Google Drive, Sincronización en la Nube, Respaldar y Recuperar.
+  - La lógica y métodos subyacentes (`resetPin()`, `lockVaultNow()`, modal del inspector) se preservan intactos en el código para no alterar ninguna otra funcionalidad.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-27 — Spec 009: Simplificación de Interfaz del Navbar (Eliminación de botones PIN, </> y Bloquear)
+- **Limpieza de Controles en Barra Superior (`index.html`):**
+  - Eliminado el botón de "PIN" (`resetPin()`) del Navbar.
+  - Eliminado el botón de Inspector API / JWT (`</>` / `code-2`) del Navbar.
+  - Eliminado el botón de "Bloquear" (`lockVaultNow()`) del Navbar.
+  - Preservados sin modificaciones los botones de Perfil de Usuario, Licencia/Trial, Google Drive, Nube, Respaldo y Recuperación.
+- **Service Worker v11 (`sw.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v11'`.
+- **Suite de Pruebas Automatizadas:**
+  - Añadida prueba `SDD 009` en `tests/boveda.test.js`. 61/61 pruebas unitarias pasando al 100% en verde.
 
 ### 2026-10-27 — Corrección Paso 2/2 Onboarding (Captura de Teclado) y Despliegue SMTP en Cloud Run
 - **Desbloqueo de Escritura en Paso 2/2 (`assets/js/app.js`, `index.html`):**

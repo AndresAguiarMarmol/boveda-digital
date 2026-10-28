@@ -336,27 +336,6 @@
           </button>
           <input type="file" id="input-restore-backup" accept=".json,application/json" class="hidden"
             onchange="window.bovedaApp.handleImportBackup(this.files[0]); this.value = '';">
-
-          <!-- Cambiar / Resetear PIN -->
-          <button title="Cambiar o Restablecer PIN de Bóveda" onclick="window.bovedaApp.resetPin();"
-            class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-amber-400 hover:text-amber-300 border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-medium">
-            <i data-lucide="key-round" class="w-4 h-4"></i>
-            <span class="hidden md:inline">PIN</span>
-          </button>
-
-          <!-- Inspector API / JWT -->
-          <button title="Inspector de API y Tokens JWT"
-            onclick="document.getElementById('modal-api-inspector').showModal();"
-            class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors">
-            <i data-lucide="code-2" class="w-4 h-4"></i>
-          </button>
-
-          <!-- Bloqueo Inmediato -->
-          <button title="Bloquear Bóveda Inmediatamente" onclick="window.bovedaApp.lockVaultNow();"
-            class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors flex items-center gap-1.5 text-xs font-medium">
-            <i data-lucide="lock" class="w-4 h-4"></i>
-            <span class="hidden md:inline">Bloquear</span>
-          </button>
         </div>
       </div>
     </header>

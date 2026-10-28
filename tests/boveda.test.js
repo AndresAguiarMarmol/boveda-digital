@@ -624,7 +624,7 @@ test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js 
 
   // 1. sw.js debe ser v2, v3, v4, v5, v6, v7, v8 o v9
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7") || swContent.includes("boveda-digital-v8") || swContent.includes("boveda-digital-v9") || swContent.includes("boveda-digital-v10"), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
+  assert.ok(swContent.includes("boveda-digital-v2") || swContent.includes("boveda-digital-v3") || swContent.includes("boveda-digital-v4") || swContent.includes("boveda-digital-v5") || swContent.includes("boveda-digital-v6") || swContent.includes("boveda-digital-v7") || swContent.includes("boveda-digital-v8") || swContent.includes("boveda-digital-v9") || swContent.includes("boveda-digital-v10") || swContent.includes("boveda-digital-v11"), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1084,7 +1084,7 @@ test('SDD 007: Identificación Obligatoria en Primer Uso y Validación por Códi
   assert.ok(appJs.includes('handleOnboardingSubmitStep2'), 'app.js debe implementar handleOnboardingSubmitStep2()');
 
   // 5. Verificación de Service Worker
-  assert.ok(/boveda-digital-v(8|9|10)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8, v9 o v10');
+  assert.ok(/boveda-digital-v(8|9|10|11)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8, v9, v10 o v11');
 
   // 6. Prueba funcional de lógica en clase VaultLicenseManager
   const { VaultLicenseManager } = require('../assets/js/license.js');
@@ -1134,14 +1134,40 @@ test('SDD 008: Soporte SMTP Gmail y Resiliencia en Envío de Correo', async () =
   assert.ok(authJs.includes('activando contingencia offline local'), 'auth.js debe activar contingencia offline si el servidor remoto falla');
   assert.ok(authJs.includes('_vault_otp_'), 'auth.js debe persistir OTP en sessionStorage ante contingencia');
 
-  // 4. Verificación de Service Worker v10
-  assert.ok(/boveda-digital-v(9|10)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9 o v10');
+  // 4. Verificación de Service Worker
+  assert.ok(/boveda-digital-v(9|10|11)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9, v10 o v11');
 
   // 5. Verificación de prevención de bloqueo de teclado en modales e inputs
   assert.ok(appJs.includes('isInputFocused || isModalOpen'), 'app.js no debe interceptar teclado si hay un input enfocado o un modal activo');
   const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
   assert.ok(html.includes('id="onboarding-otp-input"'), 'index.html debe tener el input onboarding-otp-input');
   assert.ok(html.includes('oninput="this.value = this.value.replace(/[^0-9]/g'), 'onboarding-otp-input debe sanitizar la entrada de solo números');
+});
+
+test('SDD 009: Simplificación de Interfaz del Navbar (Eliminación de botones PIN, </> y Bloquear)', () => {
+  const rootDir = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+
+  // 1. En el navbar del Dashboard no deben existir los botones de resetPin, inspector </> ni lockVaultNow
+  const headerMatch = html.match(/<header class="sticky top-0[\s\S]*?<\/header>/);
+  assert.ok(headerMatch, 'index.html debe contener el header del dashboard');
+  const headerHtml = headerMatch[0];
+
+  assert.ok(!headerHtml.includes('resetPin'), 'El navbar no debe contener el botón de Resetear PIN');
+  assert.ok(!headerHtml.includes('code-2'), 'El navbar no debe contener el botón de inspector </> (code-2)');
+  assert.ok(!headerHtml.includes('lockVaultNow'), 'El navbar no debe contener el botón de Bloquear Bóveda');
+
+  // 2. Se deben preservar íntegramente los botones esenciales en el Navbar
+  assert.ok(headerHtml.includes('id="btn-header-user-profile"'), 'El navbar debe conservar el botón de perfil de usuario');
+  assert.ok(headerHtml.includes('id="badge-license-status"'), 'El navbar debe conservar el badge de estado de licencia/trial');
+  assert.ok(headerHtml.includes('id="btn-gdrive-sync"'), 'El navbar debe conservar el botón de Google Drive');
+  assert.ok(headerHtml.includes('id="btn-cloud-sync"'), 'El navbar debe conservar el botón de sincronización en la Nube');
+  assert.ok(headerHtml.includes('id="btn-backup-vault"'), 'El navbar debe conservar el botón de Respaldar');
+  assert.ok(headerHtml.includes('id="btn-restore-vault"'), 'El navbar debe conservar el botón de Recuperar');
+
+  // 3. Verificación de Service Worker v11
+  assert.ok(swJs.includes("'boveda-digital-v11'"), 'sw.js debe estar actualizado a boveda-digital-v11');
 });
 
 

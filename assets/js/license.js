@@ -275,8 +275,14 @@ class VaultLicenseManager {
     // 2. Cargar perfil de usuario registrado si existe
     await this.getUserProfile();
 
-    // Resolver o generar el Usuario Asociado persistente
+    // Resolver o generar el Usuario Asociado persistente priorizando el usuario autenticado
     let userEmail = this.userProfile?.email || null;
+    if ((!userEmail || this._isPlaceholderEmail(userEmail)) && typeof window !== 'undefined' && window.vaultAuth?.currentUser?.email) {
+      const authMail = window.vaultAuth.currentUser.email.trim().toLowerCase();
+      if (!this._isPlaceholderEmail(authMail)) {
+        userEmail = authMail;
+      }
+    }
     if (!userEmail && typeof localStorage !== 'undefined') {
       userEmail = localStorage.getItem('vault_user_email');
     }
@@ -297,16 +303,13 @@ class VaultLicenseManager {
         await window.vaultStorage.setSetting('vault_user_email', userEmail);
       }
     }
-    if (userEmail === 'atleta@halterofilia.com' || userEmail === 'atleta@alterofilia.com') {
-      userEmail = 'su-usuario@dominio.com';
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('vault_user_email', userEmail);
-      }
-      if (typeof window !== 'undefined' && window.vaultStorage) {
-        await window.vaultStorage.setSetting('vault_user_email', userEmail);
-      }
+    this.userEmail = this.getAuthenticatedEmail(userEmail);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('vault_user_email', this.userEmail);
     }
-    this.userEmail = userEmail;
+    if (typeof window !== 'undefined' && window.vaultStorage) {
+      await window.vaultStorage.setSetting('vault_user_email', this.userEmail);
+    }
 
     // 3. Resolver o inicializar fecha de inicio del Trial (7 días)
     let trialStart = null;
@@ -539,6 +542,66 @@ class VaultLicenseManager {
   }
 
   /**
+   * Determina si un correo corresponde a un valor genérico o de plantilla
+   * @param {string} email
+   * @returns {boolean}
+   */
+  _isPlaceholderEmail(email) {
+    if (!email || typeof email !== 'string') return true;
+    const clean = email.trim().toLowerCase();
+    if (!clean) return true;
+    const placeholders = [
+      'su-usuario@dominio.com',
+      'atleta@halterofilia.com',
+      'atleta@alterofilia.com',
+      'usuario@correo.com',
+      'usuario@boveda.com'
+    ];
+    if (placeholders.includes(clean)) return true;
+    if (/^usuario_[a-z0-9_]+@boveda\.com$/.test(clean)) return true;
+    return false;
+  }
+
+  /**
+   * Resuelve el correo electrónico del usuario autenticado
+   * @param {string|null} [explicitEmail]
+   * @returns {string}
+   */
+  getAuthenticatedEmail(explicitEmail = null) {
+    const cleanExplicit = (explicitEmail && typeof explicitEmail === 'string') ? explicitEmail.trim().toLowerCase() : '';
+    const profileEmail = (this.userProfile?.email && typeof this.userProfile.email === 'string') ? this.userProfile.email.trim().toLowerCase() : '';
+    const authUserEmail = (typeof window !== 'undefined' && window.vaultAuth?.currentUser?.email) ? window.vaultAuth.currentUser.email.trim().toLowerCase() : '';
+    const storedEmail = (this.userEmail && typeof this.userEmail === 'string') ? this.userEmail.trim().toLowerCase() : '';
+
+    // 1. Si se proporcionó un correo explícito válido que NO es placeholder
+    if (cleanExplicit && !this._isPlaceholderEmail(cleanExplicit)) {
+      if (cleanExplicit === 'andres.pro@boveda.com' && profileEmail && !this._isPlaceholderEmail(profileEmail)) {
+        return profileEmail;
+      }
+      return cleanExplicit;
+    }
+
+    // 2. Correo del perfil de usuario autenticado/verificado en el dispositivo
+    if (profileEmail && !this._isPlaceholderEmail(profileEmail)) {
+      return profileEmail;
+    }
+
+    // 3. Correo de la sesión activa en VaultAuth
+    if (authUserEmail && !this._isPlaceholderEmail(authUserEmail)) {
+      return authUserEmail;
+    }
+
+    // 4. Correo persistido en el gestor de licencias
+    if (storedEmail && !this._isPlaceholderEmail(storedEmail)) {
+      return storedEmail;
+    }
+
+    // 5. Contingencia en caso de que solo exista un valor por defecto
+    return cleanExplicit || profileEmail || authUserEmail || storedEmail ||
+      (this.deviceId ? `usuario_${this.deviceId.replace('dev_', '').substring(0, 8)}@boveda.com` : 'usuario@boveda.com');
+  }
+
+  /**
    * Retorna el estado consolidado de la licencia
    * @param {string} [email]
    * @returns {object}
@@ -552,13 +615,7 @@ class VaultLicenseManager {
     const daysRemaining = Math.ceil(msRemaining / (24 * 60 * 60 * 1000));
     const hoursRemaining = Math.ceil(msRemaining / (60 * 60 * 1000));
 
-    let effectiveEmail = (email && email.trim().toLowerCase()) ||
-                           (typeof window !== 'undefined' && window.vaultAuth?.currentUser?.email) ||
-                           this.userEmail ||
-                           (this.deviceId ? `usuario_${this.deviceId.replace('dev_', '').substring(0, 8)}@boveda.com` : 'su-usuario@dominio.com');
-    if (effectiveEmail === 'atleta@halterofilia.com' || effectiveEmail === 'atleta@alterofilia.com') {
-      effectiveEmail = 'su-usuario@dominio.com';
-    }
+    const effectiveEmail = this.getAuthenticatedEmail(email);
     const cadena = generarCadenaSolicitud(this.deviceId, effectiveEmail);
 
     return {

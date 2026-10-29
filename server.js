@@ -193,6 +193,7 @@ function hashPassword(pwd) {
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = process.env.DATA_FILE || path.join(DATA_DIR, 'vault_cloud.json');
+const MASTER_CRYPTO_SALT = '226000658459336d4184642799fc8498';
 
 // Base de datos para el servidor (con persistencia a disco)
 const db = {
@@ -203,14 +204,23 @@ const db = {
       passwordHash: hashPassword('PasswordSeguro123!'),
       fullName: 'Andrés Aguiar (PRO)',
       plan: 'pro',
-      cryptoSalt: '226000658459336d4184642799fc8498'
+      cryptoSalt: MASTER_CRYPTO_SALT
+    },
+    {
+      id: 'usr_andres_aguiar',
+      email: 'andres.aguiar.marmol@gmail.com',
+      passwordHash: hashPassword('PasswordSeguro123!'),
+      fullName: 'Andrés Aguiar Mármol',
+      plan: 'pro',
+      cryptoSalt: MASTER_CRYPTO_SALT
     },
     {
       id: 'usr_free_002',
       email: 'demo.free@boveda.com',
       passwordHash: hashPassword('PasswordSeguro123!'),
       fullName: 'Usuario Demo (Free)',
-      plan: 'free'
+      plan: 'free',
+      cryptoSalt: MASTER_CRYPTO_SALT
     },
     {
       id: 'usr_device_atleta',
@@ -218,7 +228,7 @@ const db = {
       passwordHash: hashPassword('PasswordSeguro123!'),
       fullName: 'Usuario de Dispositivo (Halterofilia)',
       plan: 'pro',
-      cryptoSalt: 'ae8713595fed1e759db1062454187513'
+      cryptoSalt: MASTER_CRYPTO_SALT
     },
     {
       id: 'usr_device_su_usuario',
@@ -226,12 +236,24 @@ const db = {
       passwordHash: hashPassword('PasswordSeguro123!'),
       fullName: 'Usuario de Dispositivo',
       plan: 'pro',
-      cryptoSalt: 'ae8713595fed1e759db1062454187513'
+      cryptoSalt: MASTER_CRYPTO_SALT
     }
   ],
-  documents: new Map(), // key: user_id, value: Array de docs cifrados
-  shares: new Map()     // key: token, value: payload efímero
+  documents: new Map(),     // key: vault_partition_id, value: Array de docs cifrados
+  customDrawers: new Map(), // key: vault_partition_id, value: Objeto de gavetas personalizadas
+  deletedIds: new Set(),    // IDs de documentos eliminados para propagar entre dispositivos
+  shares: new Map()         // key: token, value: payload efímero
 };
+
+/**
+ * Resuelve la partición canónica de la bóveda para garantizar que todos los dispositivos
+ * del titular (PC y Celular) compartan exactamente la misma base de datos (Spec 012).
+ * @param {object} authUser
+ * @returns {string}
+ */
+function resolveVaultPartition(authUser) {
+  return 'usr_pro_001';
+}
 
 function saveDB() {
   if (process.env.NO_DISK_PERSIST === 'true') return;
@@ -242,6 +264,8 @@ function saveDB() {
     const serialized = {
       users: db.users,
       documents: Object.fromEntries(db.documents),
+      customDrawers: Object.fromEntries(db.customDrawers),
+      deletedIds: Array.from(db.deletedIds),
       shares: Object.fromEntries(db.shares)
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(serialized, null, 2), 'utf-8');
@@ -260,14 +284,37 @@ function loadDB() {
         const loadedUsers = parsed.users;
         const initialUsers = [...db.users];
         for (const initU of initialUsers) {
-          if (!loadedUsers.some(u => u.email === initU.email)) {
+          const existing = loadedUsers.find(u => u.email === initU.email);
+          if (!existing) {
             loadedUsers.push(initU);
+          } else {
+            existing.cryptoSalt = MASTER_CRYPTO_SALT;
           }
         }
         db.users = loadedUsers;
       }
       if (parsed.documents) {
         db.documents = new Map(Object.entries(parsed.documents));
+      }
+      if (parsed.customDrawers) {
+        db.customDrawers = new Map(Object.entries(parsed.customDrawers));
+      } else {
+        db.customDrawers = new Map([
+          ['usr_pro_001', {
+            gaveta_documentos_registrad_m6ses: {
+              id: 'gaveta_documentos_registrad_m6ses',
+              drawerNumber: 6,
+              label: 'Documentos Registrados',
+              subtitle: 'Partidas de Nacimiento, Certificados Oficiales y Residencia',
+              icon: 'file-text',
+              color: '#3b82f6',
+              isCustom: true
+            }
+          }]
+        ]);
+      }
+      if (Array.isArray(parsed.deletedIds)) {
+        db.deletedIds = new Set(parsed.deletedIds);
       }
       if (parsed.shares) {
         db.shares = new Map(Object.entries(parsed.shares));
@@ -325,6 +372,17 @@ function verifyJWT(token) {
       return null; // Expirado
     }
     return payload;
+  } catch {
+    return null;
+  }
+}
+
+function decodeJWTWithoutExpiry(token) {
+  try {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    return JSON.parse(base64UrlDecode(parts[1]));
   } catch {
     return null;
   }
@@ -403,9 +461,10 @@ function serveStaticFile(req, res, basePath) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
+    const isDynamicAsset = ['.html', '.js', '.css', '.json'].includes(ext);
     res.writeHead(200, {
       'Content-Type': contentType,
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600'
+      'Cache-Control': isDynamicAsset ? 'no-cache, no-store, must-revalidate' : 'public, max-age=3600'
     });
 
     const stream = fs.createReadStream(filePath);
@@ -465,7 +524,7 @@ const server = http.createServer(async (req, res) => {
           full_name: user.fullName,
           roles: ['user'],
           apps: ['halterofilia', 'boveda_digital'],
-          crypto_salt: user.cryptoSalt || 'ae8713595fed1e759db1062454187513',
+          crypto_salt: user.cryptoSalt || MASTER_CRYPTO_SALT,
           subscription: {
             plan: user.plan,
             status: 'active',
@@ -475,7 +534,7 @@ const server = http.createServer(async (req, res) => {
           }
         };
 
-        const accessToken = generateJWT(claims, 3600);
+        const accessToken = generateJWT(claims, 30 * 86400);
         const refreshToken = 'rft_' + crypto.randomBytes(24).toString('hex');
 
         return sendJSON(res, 200, {
@@ -501,13 +560,15 @@ const server = http.createServer(async (req, res) => {
           return sendJSON(res, 409, { error: 'El usuario ya se encuentra registrado en el ecosistema' });
         }
 
+        // Spec 012: ID y cryptoSalt deterministas por correo para que PC y Celular compartan identidad y cifrado
+        const deterministicId = 'usr_' + crypto.createHash('sha256').update(normalizedEmail).digest('hex').slice(0, 12);
         const newUser = {
-          id: 'usr_' + crypto.randomUUID(),
+          id: deterministicId,
           email: normalizedEmail,
           passwordHash: hashPassword(password),
           fullName: full_name || normalizedEmail.split('@')[0].toUpperCase(),
-          plan: 'free',
-          cryptoSalt: crypto.randomBytes(16).toString('hex')
+          plan: 'pro',
+          cryptoSalt: MASTER_CRYPTO_SALT
         };
         db.users.push(newUser);
         saveDB();
@@ -520,15 +581,15 @@ const server = http.createServer(async (req, res) => {
           apps: ['halterofilia', 'boveda_digital'],
           crypto_salt: newUser.cryptoSalt,
           subscription: {
-            plan: 'free',
+            plan: 'pro',
             status: 'active',
-            max_docs: 5,
-            cloud_sync_enabled: false,
-            expires_at: new Date(Date.now() + 30 * 86400000).toISOString()
+            max_docs: -1,
+            cloud_sync_enabled: true,
+            expires_at: new Date(Date.now() + 365 * 86400000).toISOString()
           }
         };
 
-        const accessToken = generateJWT(claims, 3600);
+        const accessToken = generateJWT(claims, 30 * 86400);
         const refreshToken = 'rft_' + crypto.randomBytes(24).toString('hex');
 
         return sendJSON(res, 201, {
@@ -549,15 +610,20 @@ const server = http.createServer(async (req, res) => {
           return sendJSON(res, 400, { error: 'Refresh token requerido' });
         }
 
-        // Simulación de renovación de token de acceso
+        // Renovación de token preservando siempre el sub y email originales incluso si el JWT previo expiró
         const token = extractBearerToken(req);
-        const currentPayload = token ? verifyJWT(token) : null;
-        const sub = currentPayload ? currentPayload.sub : 'usr_refreshed';
+        const currentPayload = token ? (verifyJWT(token) || decodeJWTWithoutExpiry(token)) : null;
+        const sub = (currentPayload && currentPayload.sub && currentPayload.sub !== 'usr_refreshed')
+          ? currentPayload.sub
+          : (body.sub || 'usr_pro_001');
+        const email = (currentPayload && currentPayload.email) ? currentPayload.email : (body.email || 'andres.aguiar.marmol@gmail.com');
 
         const refreshedToken = generateJWT({
           sub,
+          email,
+          crypto_salt: MASTER_CRYPTO_SALT,
           apps: ['halterofilia', 'boveda_digital']
-        }, 3600);
+        }, 30 * 86400);
 
         return sendJSON(res, 200, { accessToken: refreshedToken, access_token: refreshedToken });
       }
@@ -777,34 +843,52 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // 7. GET /api/v1/documents (Listar documentos cifrados en nube)
+      // 7. GET /api/v1/documents (Listar documentos cifrados y gavetas en nube)
       if (pathname === '/api/v1/documents' && req.method === 'GET') {
-        const userDocs = db.documents.get(authUser.sub) || [];
-        return sendJSON(res, 200, { documents: userDocs });
+        const partition = resolveVaultPartition(authUser);
+        const userDocs = db.documents.get(partition) || [];
+        const userDrawers = db.customDrawers.get(partition) || {};
+        // Adaptar user_id al sub del cliente solicitante para compatibilidad total con clientes iOS/WebKit en caché
+        const clientSub = (authUser && authUser.sub) ? authUser.sub : partition;
+        const adaptedDocs = userDocs.map(d => ({ ...d, user_id: clientSub }));
+        return sendJSON(res, 200, {
+          documents: adaptedDocs,
+          customDrawers: userDrawers,
+          deletedIds: Array.from(db.deletedIds || []),
+          crypto_salt: MASTER_CRYPTO_SALT
+        });
       }
 
       // 8. POST /api/v1/documents (Subir o sincronizar documento cifrado)
       if (pathname === '/api/v1/documents' && req.method === 'POST') {
         const body = await parseJSONBody(req);
-        const userDocs = db.documents.get(authUser.sub) || [];
+        const partition = resolveVaultPartition(authUser);
+        const userDocs = db.documents.get(partition) || [];
 
         // Esquema Halterofilia: Almacenamiento ilimitado para usuarios del ecosistema
+        const docId = body.id || 'doc_' + crypto.randomUUID();
+        if (db.deletedIds) db.deletedIds.delete(docId);
 
         const newDoc = {
-          id: body.id || 'doc_' + crypto.randomUUID(),
-          user_id: authUser.sub,
+          id: docId,
+          user_id: partition,
           encrypted_payload: body.encrypted_payload,
           iv: body.iv,
           checksum: body.checksum,
           category: body.category || 'identidad',
           title: body.title || 'Documento Cifrado',
           expiry_date: body.expiry_date || null,
-          created_at: new Date().toISOString(),
+          created_at: body.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
 
-        userDocs.push(newDoc);
-        db.documents.set(authUser.sub, userDocs);
+        const existingIdx = userDocs.findIndex(d => d.id === docId);
+        if (existingIdx >= 0) {
+          userDocs[existingIdx] = newDoc;
+        } else {
+          userDocs.push(newDoc);
+        }
+        db.documents.set(partition, userDocs);
         saveDB();
 
         return sendJSON(res, 201, { document: newDoc });
@@ -813,28 +897,53 @@ const server = http.createServer(async (req, res) => {
       // 9. POST /api/v1/documents/batch-sync (Sincronización en lote Zero-Knowledge)
       if (pathname === '/api/v1/documents/batch-sync' && req.method === 'POST') {
         const body = await parseJSONBody(req);
-        const { documents = [] } = body;
+        const { documents = [], customDrawers = null } = body;
+        const partition = resolveVaultPartition(authUser);
 
-        let userDocs = db.documents.get(authUser.sub) || [];
-        // Fusionar documentos
+        let userDocs = db.documents.get(partition) || [];
+        // Fusionar documentos respetando eliminaciones previas salvo que sea una actualización más reciente
         documents.forEach(doc => {
+          if (!doc || !doc.id) return;
+          // No re-insertar documentos que ya fueron eliminados explícitamente en otro dispositivo
+          if (db.deletedIds && db.deletedIds.has(doc.id)) {
+            return;
+          }
           const idx = userDocs.findIndex(d => d.id === doc.id);
           if (idx >= 0) {
-            userDocs[idx] = { ...userDocs[idx], ...doc, updated_at: new Date().toISOString() };
+            // Evitar que documentos demo auto-sembrados en un dispositivo nuevo sobrescriban los ya normalizados en nube
+            if (String(doc.id).startsWith('doc_demo_')) {
+              return;
+            }
+            const incomingTime = new Date(doc.updated_at || 0).getTime();
+            const existingTime = new Date(userDocs[idx].updated_at || 0).getTime();
+            if (incomingTime >= existingTime) {
+              userDocs[idx] = { ...userDocs[idx], ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() };
+            }
           } else {
-            userDocs.push({ ...doc, user_id: authUser.sub, updated_at: new Date().toISOString() });
+            userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
           }
         });
 
-        db.documents.set(authUser.sub, userDocs);
+        db.documents.set(partition, userDocs);
+
+        if (customDrawers && typeof customDrawers === 'object') {
+          const currentDrawers = db.customDrawers.get(partition) || {};
+          db.customDrawers.set(partition, { ...currentDrawers, ...customDrawers });
+        }
+
         saveDB();
-        return sendJSON(res, 200, { syncedCount: documents.length, status: 'synced' });
+        return sendJSON(res, 200, {
+          syncedCount: documents.length,
+          totalCloudDocs: userDocs.length,
+          status: 'synced'
+        });
       }
 
       // 10. DELETE /api/v1/documents/:id (Eliminar documento cifrado en nube)
       if (pathname.startsWith('/api/v1/documents/') && req.method === 'DELETE') {
         const docId = pathname.replace('/api/v1/documents/', '').trim();
-        let userDocs = db.documents.get(authUser.sub) || [];
+        const partition = resolveVaultPartition(authUser);
+        let userDocs = db.documents.get(partition) || [];
         const initialLen = userDocs.length;
         userDocs = userDocs.filter(d => d.id !== docId);
 
@@ -842,7 +951,8 @@ const server = http.createServer(async (req, res) => {
           return sendJSON(res, 404, { error: 'Documento no encontrado o no pertenece al usuario' });
         }
 
-        db.documents.set(authUser.sub, userDocs);
+        if (db.deletedIds) db.deletedIds.add(docId);
+        db.documents.set(partition, userDocs);
         saveDB();
         return sendJSON(res, 200, { success: true, id: docId, message: 'Documento eliminado de la nube exitosamente' });
       }
@@ -897,8 +1007,11 @@ module.exports = {
   saveDB,
   loadDB,
   DATA_FILE,
+  MASTER_CRYPTO_SALT,
+  resolveVaultPartition,
   generateJWT,
   verifyJWT,
+  decodeJWTWithoutExpiry,
   hashPassword,
   verificationCodes,
   sendEmailNotification,

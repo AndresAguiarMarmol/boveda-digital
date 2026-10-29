@@ -387,6 +387,77 @@ test('Servidor API: Inicialización y Suite de Endpoints', async (t) => {
     assert.equal(result.simulated, true);
     assert.ok(result.messageId.startsWith('<simulated-'));
   });
+
+  await t.test('SDD 012: Dos dispositivos (PC y Celular) comparten la misma BD de documentos, gavetas y crypto_salt', async () => {
+    // Dispositivo 1 (PC): inicia sesión con el correo personal autenticado
+    const loginPc = await makeRequest(
+      '/api/v1/auth/login',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'andres.aguiar.marmol@gmail.com', password: 'PasswordSeguro123!' }
+    );
+    assert.equal(loginPc.status, 200);
+    const tokenPc = loginPc.body.accessToken;
+
+    // Dispositivo 2 (Celular): inicia sesión con usuario de dispositivo o correo corporativo
+    const loginMobile = await makeRequest(
+      '/api/v1/auth/login',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'andres.pro@boveda.com', password: 'PasswordSeguro123!' }
+    );
+    assert.equal(loginMobile.status, 200);
+    const tokenMobile = loginMobile.body.accessToken;
+
+    // Ambos dispositivos deben recibir exactamente el mismo crypto_salt maestro
+    assert.equal(loginPc.body.user.crypto_salt, '226000658459336d4184642799fc8498');
+    assert.equal(loginMobile.body.user.crypto_salt, loginPc.body.user.crypto_salt);
+
+    // Subir documento desde PC
+    const newDocId = 'doc_multidevice_sync_test';
+    const syncPcRes = await makeRequest(
+      '/api/v1/documents/batch-sync',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenPc}` }
+      },
+      {
+        documents: [{
+          id: newDocId,
+          title: 'Documento Sincronizado PC a Celular',
+          category: 'identidad',
+          encrypted_payload: 'h9+Mv5yJkO1a+l5h7F9z0Bq2RealEncryptedBase64Payload==',
+          iv: 'dGVzdF9pdl8xMg==',
+          checksum: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+        }],
+        customDrawers: {
+          gaveta_viajes_test: { id: 'gaveta_viajes_test', label: 'Viajes', drawerNumber: 7, isCustom: true }
+        }
+      }
+    );
+    assert.equal(syncPcRes.status, 200);
+
+    // Consultar desde el Celular: debe ver inmediatamente el documento y la gaveta creados en la PC
+    const getMobileRes = await makeRequest('/api/v1/documents', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${tokenMobile}` }
+    });
+    assert.equal(getMobileRes.status, 200);
+    assert.ok(getMobileRes.body.documents.some(d => d.id === newDocId), 'El celular debe recibir el documento creado en la PC');
+    assert.ok(getMobileRes.body.customDrawers && getMobileRes.body.customDrawers.gaveta_viajes_test, 'El celular debe recibir las gavetas personalizadas de la PC');
+
+    // Eliminar el documento de prueba desde el Celular y comprobar propagación a PC
+    const delMobileRes = await makeRequest(`/api/v1/documents/${newDocId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${tokenMobile}` }
+    });
+    assert.equal(delMobileRes.status, 200);
+
+    const getPcAfterDel = await makeRequest('/api/v1/documents', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${tokenPc}` }
+    });
+    assert.ok(!getPcAfterDel.body.documents.some(d => d.id === newDocId), 'La eliminación en el celular debe reflejarse en la PC');
+    assert.ok(getPcAfterDel.body.deletedIds.includes(newDocId), 'deletedIds debe incluir el ID eliminado para limpiar IndexedDB local');
+  });
 });
 
 

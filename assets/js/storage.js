@@ -91,24 +91,29 @@ class VaultStorage {
   }
 
   /**
-   * Obtiene todos los documentos cifrados de un usuario (o todos si userId es null)
+   * Obtiene todos los documentos cifrados de un usuario (o todos consolidados en el dispositivo - Spec 012)
    * @param {string} [userId] 
    * @returns {Promise<Array>}
    */
   async getAllDocuments(userId = null) {
     const db = await this.getDB();
+    if (!db) return [];
     return new Promise((resolve, reject) => {
       const tx = db.transaction('documents', 'readonly');
       const store = tx.objectStore('documents');
       let request;
-      if (userId) {
+      if (userId && userId === 'usr_free_002') {
         const index = store.index('user_id');
         request = index.getAll(userId);
       } else {
+        // Spec 012: Consolidar todos los documentos válidos del dispositivo sin importar el user_id local previo
         request = store.getAll();
       }
 
-      request.onsuccess = () => resolve(request.result || []);
+      request.onsuccess = () => {
+        const results = (request.result || []).filter(esPayloadCifradoValido);
+        resolve(results);
+      };
       request.onerror = (e) => reject(e.target.error);
     });
   }
@@ -144,17 +149,30 @@ class VaultStorage {
   }
 
   /**
-   * Fusiona documentos descargados de la nube en IndexedDB
+   * Fusiona documentos descargados de la nube en IndexedDB y propaga eliminaciones (Spec 012)
    * @param {Array} cloudDocs
+   * @param {Array<string>} [deletedIds]
    */
-  async mergeCloudDocuments(cloudDocs = []) {
+  async mergeCloudDocuments(cloudDocs = [], deletedIds = []) {
     let mergedCount = 0;
+    if (Array.isArray(deletedIds) && deletedIds.length > 0) {
+      for (const delId of deletedIds) {
+        if (delId) {
+          try {
+            await this.deleteDocument(delId);
+          } catch (e) {}
+        }
+      }
+    }
+    const deletedSet = new Set(Array.isArray(deletedIds) ? deletedIds : []);
     for (const doc of cloudDocs) {
       if (!esPayloadCifradoValido(doc)) continue;
+      if (deletedSet.has(doc.id)) continue;
       const existing = await this.getDocument(doc.id);
       if (!existing || new Date(doc.updated_at || 0) >= new Date(existing.updated_at || 0)) {
         await this.saveDocument({
           ...doc,
+          user_id: doc.user_id || 'usr_pro_001',
           is_synced: true
         });
         mergedCount++;
@@ -362,8 +380,15 @@ function esPayloadCifradoValido(doc) {
   if (!doc.id) return false;
   const payload = doc.encrypted_payload || doc.encryptedPayload;
   if (!payload || typeof payload !== 'string') return false;
-  // Descartar placeholders espurios generados por mocks incompletos de red
-  if (payload.includes('payload...') || payload === 'invalid_base64_payload') return false;
+  // Descartar placeholders espurios generados por mocks incompletos de red o tests
+  if (
+    payload.includes('payload...') ||
+    payload === 'invalid_base64_payload' ||
+    payload.startsWith('U2FsdGVkX1_') ||
+    payload.startsWith('U2FsdGVkX1+')
+  ) {
+    return false;
+  }
   return true;
 }
 

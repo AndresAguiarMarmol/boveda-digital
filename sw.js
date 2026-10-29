@@ -1,5 +1,5 @@
 // sw.js – en la raíz del proyecto
-const CACHE_NAME = 'boveda-digital-v12';
+const CACHE_NAME = 'boveda-digital-v15';
 const ASSETS = [
     './',
     './index.html',
@@ -20,7 +20,7 @@ self.addEventListener('install', e => {
         caches.open(CACHE_NAME).then(async cache => {
             for (const asset of ASSETS) {
                 try {
-                    await cache.add(asset);
+                    await cache.add(new Request(asset, { cache: 'reload' }));
                 } catch (err) {
                     console.warn('[SW] No se pudo cachear recurso:', asset, err);
                 }
@@ -38,8 +38,8 @@ self.addEventListener('activate', e => {
     );
     self.clients.claim();
 });
-// Fetch – Estrategia Network-First con fallback a Cache para código de la app,
-// garantizando que los celulares reciban actualizaciones en cuanto estén conectados.
+// Fetch – Estrategia Network-First con cache: 'no-store' para código de la app,
+// garantizando que los iPhones/celulares reciban actualizaciones en cuanto estén conectados.
 self.addEventListener('fetch', e => {
     if (e.request.method !== 'GET') return;
 
@@ -49,7 +49,7 @@ self.addEventListener('fetch', e => {
 
     if (isSameOrigin) {
         e.respondWith(
-            fetch(e.request)
+            fetch(e.request, { cache: 'no-store' })
                 .then(networkRes => {
                     // Guardar copia fresca en caché para modo offline
                     if (networkRes && networkRes.status === 200) {
@@ -58,7 +58,7 @@ self.addEventListener('fetch', e => {
                     }
                     return networkRes;
                 })
-                .catch(() => caches.match(e.request))
+                .catch(() => caches.match(e.request, { ignoreSearch: true }))
         );
     } else {
         // Recursos de terceros (CDNs): Cache-First
@@ -77,4 +77,3 @@ self.addEventListener('sync', e => {
         }));
     }
 });
-

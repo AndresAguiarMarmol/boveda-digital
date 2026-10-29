@@ -102,10 +102,17 @@ class BovedaApp {
       this.switchView('auth');
     }
 
-    // Inicializar y evaluar licenciamiento offline y período de prueba (Spec 003)
+    // Inicializar y evaluar licenciamiento offline y período de prueba (Spec 003 / Spec 011)
     if (window.vaultLicense) {
       try {
         await window.vaultLicense.init();
+        const authEmail = this.getAuthenticatedUserEmail();
+        if (authEmail) {
+          await window.vaultLicense.setUserEmail(authEmail);
+          if (window.vaultAuth && typeof window.vaultAuth.syncAuthenticatedEmail === 'function') {
+            await window.vaultAuth.syncAuthenticatedEmail(authEmail);
+          }
+        }
         this.updateLicenseUI();
         this.checkLicenseLock();
 
@@ -178,12 +185,32 @@ class BovedaApp {
   }
 
   /**
+   * Resuelve el correo electrónico del usuario autenticado (Spec 011)
+   * @returns {string}
+   */
+  getAuthenticatedUserEmail() {
+    if (window.vaultLicense && typeof window.vaultLicense.getAuthenticatedEmail === 'function') {
+      return window.vaultLicense.getAuthenticatedEmail(window.vaultAuth?.currentUser?.email);
+    }
+    const profileEmail = window.vaultLicense?.userProfile?.email;
+    const authEmail = window.vaultAuth?.currentUser?.email;
+    return (profileEmail || authEmail || '').trim().toLowerCase();
+  }
+
+  /**
    * Actualiza el encabezado del dashboard con datos del usuario y perfil registrado
    */
   async renderDashboardHeader() {
+    const authEmail = this.getAuthenticatedUserEmail();
     const user = window.vaultAuth.currentUser;
     const emailEl = document.getElementById('dash-user-email');
-    if (emailEl && user) emailEl.textContent = user.email;
+    if (emailEl && (authEmail || user?.email)) {
+      emailEl.textContent = authEmail || user.email;
+    }
+
+    if (authEmail && window.vaultLicense) {
+      window.vaultLicense.setUserEmail(authEmail);
+    }
 
     // Actualizar botón de perfil de usuario en la barra horizontal
     await this.renderHeaderUserProfile();
@@ -263,7 +290,16 @@ class BovedaApp {
 
     let rawDocs = await window.vaultStorage.getAllDocuments(user.sub);
 
-    // Si la bóveda está vacía, pre-sembrar automáticamente expedientes de muestra cifrados con adjuntos digitales
+    // Spec 012: Si no hay documentos locales (o sólo están los 3 expedientes de prueba) y aún no se ha sincronizado,
+    // descargar primero de la base de datos central para mostrar todos los expedientes reales en iPhone y PC
+    const onlyHasDemoDocs = rawDocs.length > 0 && rawDocs.every(d => d && String(d.id || '').startsWith('doc_demo_'));
+    if ((rawDocs.length === 0 || onlyHasDemoDocs) && !skipCloudSync) {
+      await this.syncWithCloud(true);
+      rawDocs = await window.vaultStorage.getAllDocuments(user.sub);
+      skipCloudSync = true;
+    }
+
+    // Si tras consultar la nube la bóveda sigue vacía, pre-sembrar expedientes de muestra
     if (rawDocs.length === 0) {
       await this._seedInitialDemoDocuments(user.sub);
       rawDocs = await window.vaultStorage.getAllDocuments(user.sub);
@@ -297,11 +333,12 @@ class BovedaApp {
     ]);
 
     const fallbackKeys = [];
-    if (activePin) {
+    const candidatePins = Array.from(new Set([activePin, '123456'].filter(Boolean)));
+    for (const pinCandidate of candidatePins) {
       for (const s of candidateSalts) {
-        if (s && s !== window.vaultAuth.salt) {
+        if (s && !(pinCandidate === activePin && s === window.vaultAuth.salt)) {
           try {
-            const k = await window.vaultCrypto.deriveKeyFromPin(activePin, s);
+            const k = await window.vaultCrypto.deriveKeyFromPin(pinCandidate, s);
             fallbackKeys.push({ salt: s, key: k });
           } catch(e) {}
         }
@@ -367,6 +404,42 @@ class BovedaApp {
 
     if (reEncryptedCount > 0) {
       console.log(`[BovedaApp] ${reEncryptedCount} expedientes migrados y re-cifrados exitosamente con tu clave actual.`);
+    }
+
+    // Spec 012: Auto-reconstruir cualquier gaveta personalizada presente en los documentos sincronizados
+    // para que ningún expediente quede invisible entre PC y Celular
+    let customDrawersChanged = false;
+    const savedCustom = (await window.vaultStorage.getSetting('customDrawers_' + user.sub)) || {};
+    for (const doc of this.unlockedDocuments) {
+      if (doc.category && !this.categories[doc.category]) {
+        let inferredLabel = doc.category;
+        let inferredSubtitle = 'Expedientes y documentos personalizados sincronizados';
+        if (doc.category === 'gaveta_documentos_registrad_m6ses') {
+          inferredLabel = 'Documentos Registrados';
+          inferredSubtitle = 'Partidas de Nacimiento, Certificados Oficiales y Residencia';
+        } else if (doc.category.startsWith('gaveta_')) {
+          const parts = doc.category.replace(/^gaveta_/, '').split('_');
+          if (parts.length > 1) parts.pop(); // quitar sufijo aleatorio
+          inferredLabel = parts.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Gaveta Personalizada';
+        }
+        const drawerNumber = Object.keys(this.categories).length + 1;
+        const reconstructed = {
+          id: doc.category,
+          drawerNumber,
+          label: inferredLabel,
+          subtitle: inferredSubtitle,
+          icon: 'file-text',
+          color: '#3b82f6',
+          isCustom: true
+        };
+        this.categories[doc.category] = reconstructed;
+        savedCustom[doc.category] = reconstructed;
+        customDrawersChanged = true;
+      }
+    }
+    if (customDrawersChanged) {
+      await window.vaultStorage.setSetting('customDrawers_' + user.sub, savedCustom);
+      this.updateCategoryDropdowns();
     }
 
     if (failedCount > 0 && this.unlockedDocuments.length === 0) {
@@ -1184,6 +1257,7 @@ class BovedaApp {
 
       document.getElementById('modal-new-drawer').close();
       await window.vaultStorage.logAuditEvent(user.sub, 'DRAWER_CREATED', { drawerId, label, color });
+      this.syncWithCloud(true);
       window.vaultGoogleDrive?.triggerAutoSync(user.sub, 'drawer_created');
     } catch (err) {
       console.error(err);
@@ -1227,6 +1301,7 @@ class BovedaApp {
       this.renderCabinet();
       this.showToast(`Gaveta "${cat.label}" desinstalada del archivador.`, 'info');
       await window.vaultStorage.logAuditEvent(user.sub, 'DRAWER_DELETED', { drawerKey });
+      this.syncWithCloud(true);
       window.vaultGoogleDrive?.triggerAutoSync(user.sub, 'drawer_deleted');
     } catch (err) {
       console.error(err);
@@ -2095,15 +2170,15 @@ class BovedaApp {
     if (window.vaultLicense && typeof window.vaultLicense.saveUserProfile === 'function') {
       await window.vaultLicense.saveUserProfile({ firstName, lastName, email, phone, photo });
     }
+    if (window.vaultAuth && typeof window.vaultAuth.syncAuthenticatedEmail === 'function') {
+      await window.vaultAuth.syncAuthenticatedEmail(email, `${firstName} ${lastName}`.trim());
+    }
 
     await this.renderHeaderUserProfile();
     this.updateLicenseUI();
 
-    // Sincronizar inputs de correo en modales de licencia
-    const lockEmailInput = document.getElementById('lock-user-email-input');
-    if (lockEmailInput) lockEmailInput.value = email;
-    const infoEmailInput = document.getElementById('info-user-email-input');
-    if (infoEmailInput) infoEmailInput.value = email;
+    // Sincronizar inputs de correo y cadenas de solicitud en modales de licencia
+    this.handleLicenseEmailChange('info', email);
 
     this.closeUserProfileModal();
     this.showToast('Perfil de usuario guardado y asociado al dispositivo.', 'success');
@@ -2371,11 +2446,16 @@ class BovedaApp {
         await window.vaultLicense.markUserVerified(true);
         await window.vaultLicense.setUserEmail(this._pendingOnboardingProfile.email);
       }
+      if (window.vaultAuth && typeof window.vaultAuth.syncAuthenticatedEmail === 'function') {
+        const fullName = `${this._pendingOnboardingProfile.firstName || ''} ${this._pendingOnboardingProfile.lastName || ''}`.trim();
+        await window.vaultAuth.syncAuthenticatedEmail(this._pendingOnboardingProfile.email, fullName);
+      }
 
       const modal = document.getElementById('modal-first-run-onboarding');
       if (modal) modal.close();
 
       this.showToast('¡Identificación confirmada y correo verificado con éxito!', 'success');
+      this.handleLicenseEmailChange('info', this._pendingOnboardingProfile.email);
       await this.renderHeaderUserProfile();
       this.updateLicenseUI();
 
@@ -2698,10 +2778,11 @@ class BovedaApp {
         }
       }
 
-      // 1. Obtener todos los documentos locales de IndexedDB
+      // 1. Obtener todos los documentos y gavetas locales de IndexedDB
       const localDocs = await window.vaultStorage.getAllDocuments(user.sub);
+      const localCustomDrawers = (await window.vaultStorage.getSetting('customDrawers_' + user.sub)) || {};
 
-      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados)
+      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados y estructura de gavetas)
       if (token) {
         const controllerSync = new AbortController();
         const timeoutSync = setTimeout(() => controllerSync.abort(), 12000);
@@ -2712,7 +2793,7 @@ class BovedaApp {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ documents: localDocs }),
+          body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers }),
           signal: controllerSync.signal
         }).catch(err => {
           console.warn('[BovedaApp] Petición batch-sync diferida:', err.message);
@@ -2731,7 +2812,7 @@ class BovedaApp {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
               },
-              body: JSON.stringify({ documents: localDocs })
+              body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers })
             }).catch(() => null);
           }
         }
@@ -2742,7 +2823,7 @@ class BovedaApp {
           }
         }
 
-        // 3. Descargar documentos existentes en la Nube
+        // 3. Descargar documentos y gavetas existentes en la Nube
         const controllerGet = new AbortController();
         const timeoutGet = setTimeout(() => controllerGet.abort(), 12000);
 
@@ -2771,8 +2852,14 @@ class BovedaApp {
 
         if (getRes && getRes.ok) {
           const cloudData = await getRes.json().catch(() => ({}));
+          if (cloudData.customDrawers && typeof cloudData.customDrawers === 'object') {
+            const mergedDrawers = { ...localCustomDrawers, ...cloudData.customDrawers };
+            await window.vaultStorage.setSetting('customDrawers_' + user.sub, mergedDrawers);
+            this.categories = { ...this.defaultCategories, ...mergedDrawers };
+            this.updateCategoryDropdowns();
+          }
           if (Array.isArray(cloudData.documents)) {
-            await window.vaultStorage.mergeCloudDocuments(cloudData.documents);
+            await window.vaultStorage.mergeCloudDocuments(cloudData.documents, cloudData.deletedIds || []);
           }
         }
       }
@@ -3022,6 +3109,24 @@ class BovedaApp {
         }
       });
     }
+
+    // Spec 012: Sincronización automática reactiva entre dispositivos (PC ↔ Celular) al enfocar o recuperar red
+    const triggerReactiveCloudSync = () => {
+      const now = Date.now();
+      if (this._lastReactiveSync && (now - this._lastReactiveSync) < 4000) return;
+      this._lastReactiveSync = now;
+      if (this.activeView === 'dashboard' && window.vaultAuth?.currentUser) {
+        this.syncWithCloud(true);
+      }
+    };
+
+    window.addEventListener('online', triggerReactiveCloudSync);
+    window.addEventListener('focus', triggerReactiveCloudSync);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        triggerReactiveCloudSync();
+      }
+    });
   }
 
   /**
@@ -3251,8 +3356,8 @@ class BovedaApp {
    */
   updateLicenseUI() {
     if (!window.vaultLicense) return;
-    const user = window.vaultAuth?.currentUser;
-    const lic = window.vaultLicense.getEstadoLicencia(user?.email);
+    const authenticatedEmail = this.getAuthenticatedUserEmail();
+    const lic = window.vaultLicense.getEstadoLicencia(authenticatedEmail);
 
     const badge = document.getElementById('badge-license-status');
     const icon = document.getElementById('icon-license-badge');
@@ -3291,8 +3396,13 @@ class BovedaApp {
    */
   checkLicenseLock() {
     if (!window.vaultLicense) return;
-    const user = window.vaultAuth?.currentUser;
-    const lic = window.vaultLicense.getEstadoLicencia(user?.email);
+    const authenticatedEmail = this.getAuthenticatedUserEmail();
+
+    if (authenticatedEmail) {
+      window.vaultLicense.setUserEmail(authenticatedEmail);
+    }
+
+    const lic = window.vaultLicense.getEstadoLicencia(authenticatedEmail);
 
     const lockModal = document.getElementById('modal-trial-lock');
     if (!lockModal) return;
@@ -3304,10 +3414,8 @@ class BovedaApp {
       const cadEl = document.getElementById('lock-cadena-solicitud');
       const errEl = document.getElementById('lock-activation-error');
 
-      let displayEmail = lic.email;
-      if (!displayEmail || displayEmail === 'atleta@halterofilia.com' || displayEmail === 'atleta@alterofilia.com') {
-        displayEmail = 'su-usuario@dominio.com';
-      }
+      const displayEmail = authenticatedEmail || lic.email;
+
       if (devEl) devEl.textContent = lic.deviceId;
       if (emailInput) emailInput.value = displayEmail;
       if (emailEl) emailEl.textContent = displayEmail;
@@ -3333,8 +3441,13 @@ class BovedaApp {
    */
   openLicenseModal() {
     if (!window.vaultLicense) return;
-    const user = window.vaultAuth?.currentUser;
-    const lic = window.vaultLicense.getEstadoLicencia(user?.email);
+    const authenticatedEmail = this.getAuthenticatedUserEmail();
+
+    if (authenticatedEmail) {
+      window.vaultLicense.setUserEmail(authenticatedEmail);
+    }
+
+    const lic = window.vaultLicense.getEstadoLicencia(authenticatedEmail);
 
     const modal = document.getElementById('modal-license-info');
     if (!modal) return;
@@ -3365,10 +3478,9 @@ class BovedaApp {
       }
     }
 
-    let displayEmail = lic.email;
-    if (!displayEmail || displayEmail === 'atleta@halterofilia.com' || displayEmail === 'atleta@alterofilia.com') {
-      displayEmail = 'su-usuario@dominio.com';
-    }
+    // Presentar obligatoriamente el correo del usuario autenticado
+    const displayEmail = authenticatedEmail || lic.email;
+
     if (devId) devId.textContent = lic.deviceId;
     if (emailInput) emailInput.value = displayEmail;
     if (cadena) cadena.value = lic.cadenaSolicitud;
@@ -3515,9 +3627,12 @@ window.addEventListener('DOMContentLoaded', () => {
 // Registro de Service Worker para PWA (Acceso Offline y Arranque a 1 Toque)
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
       .then((reg) => {
         console.log('[Boveda PWA] Service Worker registrado con éxito:', reg.scope);
+        if (typeof reg.update === 'function') {
+          reg.update().catch(() => {});
+        }
         if ('SyncManager' in window && reg.sync) {
           reg.sync.register('cloud-sync').catch(() => {});
         }

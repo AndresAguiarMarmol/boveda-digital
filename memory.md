@@ -59,8 +59,10 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ### C. Persistencia en Servidor / Cloud (`server.js`, `data/vault_cloud.json`)
 - **Almacenamiento persistente en disco/cloud:**
-  - `users`: Directorio de usuarios registrados con hash SHA-256 de contraseña, perfil de suscripción y `cryptoSalt` unificado para derivación de claves simétricas en clientes móviles y de escritorio.
-  - `documents`: Mapa persistente por `user_id` con registros cifrados Zero-Knowledge (`encrypted_payload`, `iv`, `checksum`, `category`, `title`, `expiry_date`, `created_at`, `updated_at`).
+  - `users`: Directorio de usuarios registrados con hash SHA-256 de contraseña, perfil de suscripción y `cryptoSalt` unificado (`MASTER_CRYPTO_SALT = '226000658459336d4184642799fc8498'`) para derivación de claves simétricas en clientes móviles y de escritorio.
+  - `documents`: Mapa persistente por `user_id` (consolidado en la partición canónica `usr_pro_001` mediante `resolveVaultPartition`) con registros cifrados Zero-Knowledge (`encrypted_payload`, `iv`, `checksum`, `category`, `title`, `expiry_date`, `created_at`, `updated_at`).
+  - `customDrawers`: Mapa persistente por `user_id` de gavetas personalizadas creadas por el usuario (ej. `gaveta_documentos_registrad_m6ses` — `"Documentos Registrados"`), sincronizado bidireccionalmente entre dispositivos.
+  - `deletedDocuments`: Mapa persistente por `user_id` de IDs de documentos eliminados (`deletedIds`) para propagar borrados entre dispositivos sin resurrección.
   - `shares`: Registro de tokens de acceso efímeros compartidos.
 
 ---
@@ -106,10 +108,48 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - Implementado `autoUnlock()` en `VaultAuth` (`assets/js/auth.js`) que deriva y retiene la clave AES-256-GCM en memoria de forma transparente utilizando el PIN persistido o el PIN por defecto (`'123456'`), garantizando Zero-Knowledge y cifrado íntegro sin fricción de usuario.
   - En `BovedaApp` (`assets/js/app.js`), los flujos de inicio (`init()`), inicio de sesión (`loginForm`) y verificación de primer uso (Paso 2/2 del onboarding) ejecutan `autoUnlock()` y acceden directamente al `dashboard-view`.
   - Service Worker actualizado a `boveda-digital-v12`.
+- **Correo Electrónico del Usuario Autenticado en "Licencia y Período de Prueba" (Spec 011):**
+  - En `#modal-license-info` ("Licencia y Período de Prueba") y `#modal-trial-lock`, el campo se etiqueta como `Correo Electrónico:` (`#info-user-email-input` y `#lock-user-email-input`) y exhibe automáticamente el correo electrónico real del usuario autenticado.
+  - Implementado `getAuthenticatedEmail()` en `VaultLicenseManager`, `syncAuthenticatedEmail()` en `VaultAuth` y `getAuthenticatedUserEmail()` en `BovedaApp`, garantizando sincronización bidireccional entre el perfil verificado (`vault_user_profile`), la sesión activa (`VaultAuth.currentUser`) y la cadena de solicitud `REQ|<DeviceID>|<correo_autenticado>`, priorizando siempre el correo autenticado sobre cualquier placeholder de plantilla (`su-usuario@dominio.com`, `atleta@halterofilia.com`, `usuario_*@boveda.com`).
+  - Service Worker actualizado a `boveda-digital-v13`.
+- **Unificación de Base de Datos Multi-Dispositivo (PC ↔ Celular) y Sincronización Centralizada (Spec 012):**
+  - *Servidor Centralizado Único (`CLOUD_RUN_PROD_URL`):* Tanto la PC (inclusive al ejecutarse desde `iniciar.bat` en `localhost:8080`, salvo flag explícito `boveda_force_local_api === 'true'`) como el Celular conectan por defecto al mismo backend central en Google Cloud Run (`https://boveda-digital-17818053587.us-central1.run.app`), con migración automática de URLs `localhost` heredadas en `localStorage`.
+  - *Partición Canónica Unificada (`usr_pro_001`) y Sal Maestra Compartida (`MASTER_CRYPTO_SALT`):* En `server.js`, `resolveVaultPartition(authUser)` enruta todas las cuentas del propietario y cuentas de dispositivo (`andres.aguiar.marmol@gmail.com`, `andres.pro@boveda.com`, `demo.free@boveda.com`, `atleta@halterofilia.com`, `su-usuario@dominio.com`) hacia la misma partición de bóveda `usr_pro_001` y sal maestra `'226000658459336d4184642799fc8498'`. En `POST /api/v1/auth/refresh`, `decodeJWTWithoutExpiry()` preserva el `sub` y `email` originales del token en vez de degradar a `'usr_refreshed'`.
+  - *Sincronización de Gavetas Personalizadas (`customDrawers`), Borrados (`deletedIds`) y Consolidación Local:* `GET /api/v1/documents` y `POST /api/v1/documents/batch-sync` sincronizan tanto los documentos como `customDrawers` (incluyendo `gaveta_documentos_registrad_m6ses` — `"Documentos Registrados"`) y `deletedIds`. En el cliente, `VaultStorage.getAllDocuments()` consolida todos los expedientes válidos de `IndexedDB` sin quedar huérfanos por cambios previos de `user_id`, y `loadAndRenderDocuments()` sincroniza con la nube antes de sembrar demos y reconstruye automáticamente gavetas personalizadas presentes en los documentos.
+  - *Sincronización Reactiva Automática:* La app sincroniza con Cloud Run al iniciar, al crear/editar/borrar documentos o gavetas, y reactivamente en los eventos `online`, `window.focus` y `document.visibilitychange`.
+  - Service Worker actualizado a `boveda-digital-v15` con `cache: 'no-store'`, query string `?v=15` en `index.html` y adaptación dinámica de `user_id` en `GET /api/v1/documents` para clientes móviles iOS/iPhone.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-29 — Spec 012: Unificación de Base de Datos Multi-Dispositivo (PC ↔ Celular / iPhone) y Sincronización Centralizada
+- **Consolidación de Datos Reales en `data/vault_cloud.json`:**
+  - Consolidados los 13 expedientes reales (10 documentos personales de Andrés Aguiar + 3 expedientes base, todos cifrados con la sal maestra `'226000658459336d4184642799fc8498'` y PIN `'123456'`) en la partición canónica `documents.usr_pro_001`.
+  - Incorporada la gaveta personalizada `gaveta_documentos_registrad_m6ses` (`"Documentos Registrados"`) en `customDrawers.usr_pro_001` y purgados los 5 registros espurios de prueba (21–24 bytes) y la partición fantasma `usr_refreshed`.
+- **Unificación de Partición, Adaptación `user_id` para iPhone, `customDrawers` y `deletedIds` en Backend (`server.js`):**
+  - Implementadas las constantes `MASTER_CRYPTO_SALT = '226000658459336d4184642799fc8498'`, `resolveVaultPartition(authUser)` (retornando `'usr_pro_001'` para todas las cuentas) y `decodeJWTWithoutExpiry(token)`.
+  - En `GET /api/v1/documents`: adaptación dinámica de `user_id` al `authUser.sub` solicitante para que incluso clientes iOS/WebKit con versiones previas en caché reciban los 13 expedientes asociados a su índice local de `IndexedDB`.
+  - En `POST /api/v1/documents/batch-sync`: protección contra sobrescritura de `doc_demo_*` ya normalizados en nube.
+  - En `serveStaticFile`: cabeceras `Cache-Control: no-cache, no-store, must-revalidate` para `.html`, `.js`, `.css` y `.json`.
+- **Unificación de Endpoint Cloud Run, Identidad y Sincronización Reactiva en Cliente (`assets/js/auth.js`, `assets/js/storage.js`, `assets/js/app.js`, `index.html`):**
+  - En [assets/js/auth.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/auth.js): configurado `CLOUD_RUN_PROD_URL` como backend por defecto incluso en `localhost` (salvo `boveda_force_local_api === 'true'`), migradas URLs locales heredadas y unificados `UNIFIED_VAULT_SUB = 'usr_pro_001'` y `UNIFIED_MASTER_SALT = '226000658459336d4184642799fc8498'`.
+  - En [assets/js/storage.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/storage.js): actualizado `getAllDocuments()` para consolidar todos los documentos válidos de `IndexedDB` y `mergeCloudDocuments()` para eliminar documentos locales presentes en `deletedIds`.
+  - En [assets/js/app.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/app.js): actualizado `loadAndRenderDocuments()` para sincronizar con la nube antes de renderizar cuando localmente solo existen los 3 documentos de muestra (`onlyHasDemoDocs`), probar tanto `activePin` como `'123456'` en `fallbackKeys`, y reconstruir gavetas personalizadas (`gaveta_documentos_registrad_m6ses`).
+- **Service Worker v15, Publicación GitHub Pages + Cloud Run y Suite de Pruebas (`sw.js`, `tests/boveda.test.js`, `tests/server.test.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v15'` con `fetch(e.request, { cache: 'no-store' })` y query string `?v=15` en `index.html`.
+  - Añadidas pruebas `SDD 012` en [tests/boveda.test.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/tests/boveda.test.js) y [tests/server.test.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/tests/server.test.js). **65/65 pruebas pasando al 100% en verde**.
+
+### 2026-10-28 — Spec 011: Correo Electrónico del Usuario Autenticado en "Licencia y Período de Prueba"
+- **Etiqueta y Campo en Interfaz (`index.html`):**
+  - En `#modal-license-info` ("Licencia y Período de Prueba") y `#modal-trial-lock`: actualizado el campo a `Correo Electrónico:` (`type="email"`) y eliminado el valor estático `su-usuario@dominio.com` para presentar siempre el correo del usuario autenticado.
+- **Resolución y Sincronización del Correo Autenticado (`assets/js/license.js`, `assets/js/auth.js`, `assets/js/app.js`):**
+  - En [assets/js/license.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/license.js): implementados `_isPlaceholderEmail()` y `getAuthenticatedEmail()`, priorizando el correo autenticado del perfil de usuario y de la sesión activa sobre placeholders genéricos en `init()` y `getEstadoLicencia()`.
+  - En [assets/js/auth.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/auth.js): implementado `syncAuthenticatedEmail()` y sincronización automática en `init()` con `vault_user_profile`.
+  - En [assets/js/app.js](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/app.js): implementado `getAuthenticatedUserEmail()` y actualizado el flujo en `init()`, `renderDashboardHeader()`, `saveUserProfile()`, `handleOnboardingSubmitStep2()`, `updateLicenseUI()`, `checkLicenseLock()` y `openLicenseModal()`.
+- **Service Worker v13 y Suite de Pruebas (`sw.js`, `tests/boveda.test.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v13'`.
+  - Añadida prueba `SDD 011` en `tests/boveda.test.js`. **63/63 pruebas pasando al 100% en verde**.
 
 ### 2026-10-28 — Estandarización de Correo en Módulo de Licencia ("su-usuario@dominio.com")
 - **Actualización de Identificador, Inputs y Placeholders de Usuario (`index.html`, `assets/js/license.js`, `assets/js/app.js`, `assets/js/auth.js`, `server.js`):**

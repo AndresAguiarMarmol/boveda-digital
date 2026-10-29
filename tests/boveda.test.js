@@ -624,7 +624,7 @@ test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js 
 
   // 1. sw.js debe ser v2, v3, v4, v5, v6, v7, v8 o v9
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(/boveda-digital-v(2|3|4|5|6|7|8|9|10|11|12)/.test(swContent), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
+  assert.ok(/boveda-digital-v(2|3|4|5|6|7|8|9|10|11|12|13|14|15)/.test(swContent), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1084,7 +1084,7 @@ test('SDD 007: Identificación Obligatoria en Primer Uso y Validación por Códi
   assert.ok(appJs.includes('handleOnboardingSubmitStep2'), 'app.js debe implementar handleOnboardingSubmitStep2()');
 
   // 5. Verificación de Service Worker
-  assert.ok(/boveda-digital-v(8|9|10|11|12)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8 a v12');
+  assert.ok(/boveda-digital-v(8|9|10|11|12|13|14|15)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8 a v15');
 
   // 6. Prueba funcional de lógica en clase VaultLicenseManager
   const { VaultLicenseManager } = require('../assets/js/license.js');
@@ -1135,7 +1135,7 @@ test('SDD 008: Soporte SMTP Gmail y Resiliencia en Envío de Correo', async () =
   assert.ok(authJs.includes('_vault_otp_'), 'auth.js debe persistir OTP en sessionStorage ante contingencia');
 
   // 4. Verificación de Service Worker
-  assert.ok(/boveda-digital-v(9|10|11|12)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9 a v12');
+  assert.ok(/boveda-digital-v(9|10|11|12|13|14|15)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9 a v15');
 
   // 5. Verificación de prevención de bloqueo de teclado en modales e inputs
   assert.ok(appJs.includes('isInputFocused || isModalOpen'), 'app.js no debe interceptar teclado si hay un input enfocado o un modal activo');
@@ -1167,7 +1167,7 @@ test('SDD 009: Simplificación de Interfaz del Navbar (Eliminación de botones P
   assert.ok(headerHtml.includes('id="btn-restore-vault"'), 'El navbar debe conservar el botón de Recuperar');
 
   // 3. Verificación de Service Worker v11 o superior
-  assert.ok(/boveda-digital-v(11|12)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v11 o v12');
+  assert.ok(/boveda-digital-v(11|12|13|14|15)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v11 a v15');
 });
 
 test('SDD 010: Eliminación de la Solicitud de Clave para la Bóveda Protegida y Auto-Desbloqueo', () => {
@@ -1191,8 +1191,87 @@ test('SDD 010: Eliminación de la Solicitud de Clave para la Bóveda Protegida y
   // En loginForm, debe acceder a dashboard con autoUnlock
   assert.ok(appJs.includes("await window.vaultAuth.autoUnlock();\n          this.switchView('dashboard');"), 'login debe auto-desbloquear y mostrar dashboard');
 
-  // 3. Service Worker debe estar en v12
-  assert.ok(swJs.includes("'boveda-digital-v12'"), 'sw.js debe estar en versión boveda-digital-v12');
+  // 3. Service Worker debe estar en v12 o superior
+  assert.ok(/boveda-digital-v(12|13|14|15)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v12 a v15');
+});
+
+test('SDD 011: Correo Electrónico del Usuario Autenticado en Licencia y Período de Prueba', async () => {
+  const rootDir = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  const licenseJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'license.js'), 'utf8');
+  const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+
+  // 1. Verificación en index.html: etiqueta "Correo Electrónico:" en modal-license-info y ausencia de value="su-usuario@dominio.com"
+  const modalLicenseMatch = html.match(/<dialog id="modal-license-info"[\s\S]*?<\/dialog>/);
+  assert.ok(modalLicenseMatch, 'index.html debe contener el modal modal-license-info');
+  const modalLicenseHtml = modalLicenseMatch[0];
+  assert.ok(modalLicenseHtml.includes('for="info-user-email-input"'), 'modal-license-info debe tener etiqueta para info-user-email-input');
+  assert.ok(modalLicenseHtml.includes('Correo Electrónico:'), 'modal-license-info debe mostrar el campo "Correo Electrónico:"');
+  assert.ok(!modalLicenseHtml.includes('value="su-usuario@dominio.com"'), 'info-user-email-input no debe tener hardcodeado value="su-usuario@dominio.com"');
+
+  // 2. Verificación de métodos de resolución y sincronización en license.js, auth.js y app.js
+  assert.ok(licenseJs.includes('getAuthenticatedEmail('), 'VaultLicenseManager debe implementar getAuthenticatedEmail()');
+  assert.ok(authJs.includes('syncAuthenticatedEmail('), 'VaultAuth debe implementar syncAuthenticatedEmail()');
+  assert.ok(appJs.includes('getAuthenticatedUserEmail('), 'BovedaApp debe implementar getAuthenticatedUserEmail()');
+
+  // 3. Prueba funcional: prioridad del correo del usuario autenticado sobre placeholders genéricos
+  const { VaultLicenseManager } = require('../assets/js/license.js');
+  const mgr = new VaultLicenseManager();
+  mgr.deviceId = 'dev_test_spec011';
+  mgr.userEmail = 'su-usuario@dominio.com';
+
+  // Cuando el usuario se autentica y guarda su perfil con correo real, getAuthenticatedEmail y getEstadoLicencia deben retornar ese correo
+  await mgr.saveUserProfile({
+    firstName: 'Andrés',
+    lastName: 'Aguiar',
+    email: 'andres.aguiar.marmol@gmail.com',
+    phone: '+56933395447'
+  });
+
+  assert.equal(mgr.getAuthenticatedEmail(), 'andres.aguiar.marmol@gmail.com', 'getAuthenticatedEmail() debe retornar el correo del usuario autenticado');
+  // Incluso si se pasa accidentalmente un placeholder como argumento, debe priorizar el correo real autenticado
+  assert.equal(mgr.getAuthenticatedEmail('su-usuario@dominio.com'), 'andres.aguiar.marmol@gmail.com', 'getAuthenticatedEmail() debe ignorar placeholders cuando existe correo autenticado');
+
+  const estado = mgr.getEstadoLicencia('su-usuario@dominio.com');
+  assert.equal(estado.email, 'andres.aguiar.marmol@gmail.com', 'getEstadoLicencia() debe usar el correo del usuario autenticado');
+  assert.equal(estado.cadenaSolicitud, 'REQ|dev_test_spec011|andres.aguiar.marmol@gmail.com', 'La cadena de solicitud debe contener el correo del usuario autenticado');
+
+  // 4. Service Worker v13 o superior
+  assert.ok(/boveda-digital-v(13|14|15)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v13 a v15');
+});
+
+test('SDD 012: Unificación de Base de Datos Multi-Dispositivo (PC y Celular) y Sincronización Centralizada', () => {
+  const rootDir = path.join(__dirname, '..');
+  const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const storageJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'storage.js'), 'utf8');
+  const serverJs = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+  const cloudJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'data', 'vault_cloud.json'), 'utf8'));
+
+  // 1. VaultAuth debe conectar por defecto a Cloud Run incluso en PC (salvo flag boveda_force_local_api) y usar sub/salt unificados
+  assert.ok(authJs.includes("this.UNIFIED_MASTER_SALT = UNIFIED_MASTER_SALT"), 'VaultAuth debe definir UNIFIED_MASTER_SALT');
+  assert.ok(authJs.includes("this.UNIFIED_VAULT_SUB = 'usr_pro_001'"), 'VaultAuth debe definir UNIFIED_VAULT_SUB = usr_pro_001');
+  assert.ok(authJs.includes('boveda_force_local_api'), 'VaultAuth solo debe apuntar a localhost si boveda_force_local_api está activo');
+
+  // 2. server.js debe unificar la partición de la bóveda con resolveVaultPartition y preservar sub en refresh
+  assert.ok(serverJs.includes('function resolveVaultPartition('), 'server.js debe implementar resolveVaultPartition');
+  assert.ok(serverJs.includes('function decodeJWTWithoutExpiry('), 'server.js debe implementar decodeJWTWithoutExpiry para refresh');
+
+  // 3. data/vault_cloud.json debe contener los 13 expedientes legítimos consolidados en usr_pro_001 sin registros espurios
+  assert.ok(Array.isArray(cloudJson.documents.usr_pro_001), 'vault_cloud.json debe contener la colección unificada usr_pro_001');
+  assert.equal(cloudJson.documents.usr_pro_001.length, 13, 'vault_cloud.json debe consolidar los 13 expedientes reales del titular');
+  assert.ok(cloudJson.customDrawers && cloudJson.customDrawers.usr_pro_001 && cloudJson.customDrawers.usr_pro_001.gaveta_documentos_registrad_m6ses, 'vault_cloud.json debe preservar la gaveta personalizada Documentos Registrados');
+
+  // 4. app.js y storage.js deben sincronizar customDrawers, propagar deletedIds y reconstruir gavetas personalizadas
+  assert.ok(appJs.includes('triggerReactiveCloudSync'), 'app.js debe sincronizar automáticamente al enfocar o recuperar red');
+  assert.ok(appJs.includes('cloudData.deletedIds'), 'app.js debe propagar eliminaciones de la nube');
+  assert.ok(storageJs.includes('deletedIds = []'), 'storage.js debe aceptar deletedIds en mergeCloudDocuments');
+
+  // 5. Service Worker v15
+  assert.ok(/boveda-digital-v(14|15)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v14 o v15');
 });
 
 

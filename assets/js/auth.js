@@ -10,18 +10,31 @@
 class VaultAuth {
   constructor() {
     const CLOUD_RUN_PROD_URL = 'https://boveda-digital-17818053587.us-central1.run.app';
+    const UNIFIED_MASTER_SALT = '226000658459336d4184642799fc8498';
+    this.UNIFIED_MASTER_SALT = UNIFIED_MASTER_SALT;
+    this.UNIFIED_VAULT_SUB = 'usr_pro_001';
+
     let defaultBaseUrl = CLOUD_RUN_PROD_URL;
     if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
       const hostname = window.location.hostname;
-      // Si corre en localhost o 127.0.0.1, priorizar el servidor local; de lo contrario conectar con Cloud Run
-      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      const forceLocal = typeof localStorage !== 'undefined' && localStorage.getItem('boveda_force_local_api') === 'true';
+      // Spec 012: Tanto PC (localhost) como Celular conectan por defecto al mismo servidor Cloud Run centralizado
+      if (forceLocal && (hostname === 'localhost' || hostname === '127.0.0.1')) {
         defaultBaseUrl = window.location.origin;
       } else {
         defaultBaseUrl = window.location.origin.includes('run.app') ? window.location.origin : CLOUD_RUN_PROD_URL;
       }
     }
-    this.apiBaseUrl = localStorage.getItem('boveda_api_base_url') || defaultBaseUrl;
-    this.isDemoMode = localStorage.getItem('boveda_demo_mode') === 'true'; // False por defecto para conectar con backend disponible
+
+    let savedApiUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('boveda_api_base_url') : null;
+    const forceLocal = typeof localStorage !== 'undefined' && localStorage.getItem('boveda_force_local_api') === 'true';
+    if (savedApiUrl && !forceLocal && (savedApiUrl.includes('localhost') || savedApiUrl.includes('127.0.0.1'))) {
+      try { localStorage.removeItem('boveda_api_base_url'); } catch (e) {}
+      savedApiUrl = null;
+    }
+
+    this.apiBaseUrl = savedApiUrl || defaultBaseUrl;
+    this.isDemoMode = typeof localStorage !== 'undefined' && localStorage.getItem('boveda_demo_mode') === 'true'; // False por defecto para conectar con backend disponible
     this.currentUser = null;
     this.accessToken = null;
     this.refreshToken = null;
@@ -42,17 +55,18 @@ class VaultAuth {
         cleanUrl = 'https://' + cleanUrl;
       }
       localStorage.setItem('boveda_api_base_url', cleanUrl);
+      if (cleanUrl.includes('localhost') || cleanUrl.includes('127.0.0.1')) {
+        localStorage.setItem('boveda_force_local_api', 'true');
+      } else {
+        localStorage.removeItem('boveda_force_local_api');
+      }
       this.apiBaseUrl = cleanUrl;
     } else {
       localStorage.removeItem('boveda_api_base_url');
+      localStorage.removeItem('boveda_force_local_api');
       let defaultBaseUrl = CLOUD_RUN_PROD_URL;
       if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-        const hostname = window.location.hostname;
-        if (hostname === 'localhost' || hostname === '127.0.0.1') {
-          defaultBaseUrl = window.location.origin;
-        } else {
-          defaultBaseUrl = window.location.origin.includes('run.app') ? window.location.origin : CLOUD_RUN_PROD_URL;
-        }
+        defaultBaseUrl = window.location.origin.includes('run.app') ? window.location.origin : CLOUD_RUN_PROD_URL;
       }
       this.apiBaseUrl = defaultBaseUrl;
     }
@@ -84,14 +98,46 @@ class VaultAuth {
     const userSalt = await window.vaultStorage.getSetting('userSalt');
 
     if (savedUser && savedToken) {
-      if (savedUser.email === 'atleta@halterofilia.com' || savedUser.email === 'atleta@alterofilia.com') {
-        savedUser.email = 'su-usuario@dominio.com';
-        window.vaultStorage.setSetting('currentUser', savedUser).catch(() => {});
-      }
+      // Sincronizar con el correo del perfil de usuario autenticado si existe
+      try {
+        let profile = null;
+        if (typeof localStorage !== 'undefined') {
+          const rawProf = localStorage.getItem('vault_user_profile');
+          if (rawProf) profile = JSON.parse(rawProf);
+        }
+        if (!profile && window.vaultStorage) {
+          profile = await window.vaultStorage.getSetting('vault_user_profile');
+        }
+        if (profile && profile.email && profile.email.trim()) {
+          const profEmail = profile.email.trim().toLowerCase();
+          if (savedUser.email !== profEmail) {
+            savedUser.email = profEmail;
+            if (profile.firstName || profile.lastName) {
+              savedUser.full_name = `${profile.firstName || ''} ${profile.lastName || ''}`.trim();
+            }
+            window.vaultStorage.setSetting('currentUser', savedUser).catch(() => {});
+          }
+        } else if (savedUser.email === 'atleta@halterofilia.com' || savedUser.email === 'atleta@alterofilia.com') {
+          savedUser.email = 'su-usuario@dominio.com';
+          window.vaultStorage.setSetting('currentUser', savedUser).catch(() => {});
+        }
+      } catch (e) {}
+
+      // Spec 012: Unificar sub y salt criptográfico entre dispositivos (PC y Celular)
+      savedUser.sub = this.UNIFIED_VAULT_SUB;
+      savedUser.crypto_salt = this.UNIFIED_MASTER_SALT;
+
       this.currentUser = savedUser;
       this.accessToken = savedToken;
       this.refreshToken = savedRefreshToken;
-      this.salt = userSalt;
+      this.salt = this.UNIFIED_MASTER_SALT || userSalt;
+      if (window.vaultStorage) {
+        window.vaultStorage.setSetting('currentUser', this.currentUser).catch(() => {});
+        window.vaultStorage.setSetting('userSalt', this.salt).catch(() => {});
+        if (this.currentUser.email) {
+          window.vaultStorage.setSetting('userSalt_' + this.currentUser.email, this.salt).catch(() => {});
+        }
+      }
       try {
         if (typeof sessionStorage !== 'undefined') {
           const sessPin = sessionStorage.getItem('_vault_session_pin');
@@ -104,18 +150,48 @@ class VaultAuth {
   }
 
   /**
+   * Sincroniza el correo del usuario autenticado en la sesión activa de VaultAuth
+   * @param {string} email 
+   * @param {string|null} [fullName] 
+   */
+  async syncAuthenticatedEmail(email, fullName = null) {
+    if (!email || typeof email !== 'string') return;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    if (this.currentUser) {
+      this.currentUser.email = cleanEmail;
+      this.currentUser.sub = this.UNIFIED_VAULT_SUB;
+      this.currentUser.crypto_salt = this.UNIFIED_MASTER_SALT;
+      if (fullName && fullName.trim()) {
+        this.currentUser.full_name = fullName.trim();
+      }
+      this.salt = this.UNIFIED_MASTER_SALT;
+      if (window.vaultStorage) {
+        await window.vaultStorage.setSetting('currentUser', this.currentUser);
+        await window.vaultStorage.setSetting('userSalt', this.salt);
+        await window.vaultStorage.setSetting('userSalt_' + cleanEmail, this.salt);
+      }
+    } else {
+      // Si no existía sesión activa, inicializar sesión con el correo autenticado
+      await this.login(cleanEmail, 'PasswordSeguro123!');
+    }
+  }
+
+  /**
    * Inicia sesión contra el backend (Cloud First con contingencia Offline)
    * @param {string} email 
    * @param {string} password 
    */
   async login(email, password) {
+    const cleanEmail = (email || '').trim().toLowerCase();
     const isLive = !this.isDemoMode && await this.checkServerConnection();
     if (isLive) {
       try {
         const response = await fetch(`${this.apiBaseUrl}/api/v1/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password, app: 'boveda_digital' })
+          body: JSON.stringify({ email: cleanEmail, password, app: 'boveda_digital' })
         });
 
         if (response.ok) {
@@ -123,20 +199,19 @@ class VaultAuth {
           this.accessToken = data.accessToken || data.access_token;
           this.refreshToken = data.refreshToken || data.refresh_token;
           this.currentUser = data.user;
-          
-          let salt = data.user.crypto_salt;
-          if (!salt) {
-            salt = await window.vaultStorage.getSetting('userSalt_' + data.user.email) || window.vaultCrypto.generateRandomSalt(16);
-          }
+          this.currentUser.sub = this.UNIFIED_VAULT_SUB;
+
+          const salt = this.UNIFIED_MASTER_SALT || data.user.crypto_salt;
           this.salt = salt;
+          this.currentUser.crypto_salt = salt;
 
           await window.vaultStorage.setSetting('currentUser', this.currentUser);
           await window.vaultStorage.setSetting('accessToken', this.accessToken);
           await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
-          await window.vaultStorage.setSetting('userSalt_' + data.user.email, this.salt);
+          await window.vaultStorage.setSetting('userSalt_' + this.currentUser.email, this.salt);
           await window.vaultStorage.setSetting('userSalt', this.salt);
 
-          await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'cloud' });
+          await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email: cleanEmail, mode: 'cloud' });
           if (typeof window !== 'undefined' && window.vaultLicense) {
             window.vaultLicense.setUserEmail(this.currentUser.email);
           }
@@ -153,9 +228,9 @@ class VaultAuth {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  email: email.trim().toLowerCase(),
+                  email: cleanEmail,
                   password,
-                  full_name: email.split('@')[0].toUpperCase(),
+                  full_name: cleanEmail.split('@')[0].toUpperCase(),
                   app: 'boveda_digital'
                 })
               });
@@ -163,24 +238,23 @@ class VaultAuth {
                 const retryResponse = await fetch(`${this.apiBaseUrl}/api/v1/auth/login`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ email, password, app: 'boveda_digital' })
+                  body: JSON.stringify({ email: cleanEmail, password, app: 'boveda_digital' })
                 });
                 if (retryResponse.ok) {
                   const data = await retryResponse.json();
                   this.accessToken = data.accessToken || data.access_token;
                   this.refreshToken = data.refreshToken || data.refresh_token;
                   this.currentUser = data.user;
-                  let salt = data.user.crypto_salt;
-                  if (!salt) {
-                    salt = await window.vaultStorage.getSetting('userSalt_' + data.user.email) || window.vaultCrypto.generateRandomSalt(16);
-                  }
+                  this.currentUser.sub = this.UNIFIED_VAULT_SUB;
+                  const salt = this.UNIFIED_MASTER_SALT || data.user.crypto_salt;
                   this.salt = salt;
+                  this.currentUser.crypto_salt = salt;
                   await window.vaultStorage.setSetting('currentUser', this.currentUser);
                   await window.vaultStorage.setSetting('accessToken', this.accessToken);
                   await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
-                  await window.vaultStorage.setSetting('userSalt_' + data.user.email, this.salt);
+                  await window.vaultStorage.setSetting('userSalt_' + this.currentUser.email, this.salt);
                   await window.vaultStorage.setSetting('userSalt', this.salt);
-                  await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'cloud_autoreg' });
+                  await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email: cleanEmail, mode: 'cloud_autoreg' });
                   if (typeof window !== 'undefined' && window.vaultLicense) {
                     window.vaultLicense.setUserEmail(this.currentUser.email);
                   }
@@ -197,42 +271,37 @@ class VaultAuth {
       }
     }
 
-    // Modo local / offline de contingencia inmediata
+    // Modo local / offline de contingencia inmediata con sub y salt deterministas (Spec 012)
     await new Promise(r => setTimeout(r, 300));
     const mockPayload = {
-      sub: 'usr_' + Math.random().toString(36).substr(2, 9),
-      email: email.trim().toLowerCase(),
-      full_name: email.split('@')[0].toUpperCase(),
+      sub: this.UNIFIED_VAULT_SUB,
+      email: cleanEmail,
+      full_name: cleanEmail.split('@')[0].toUpperCase(),
       roles: ['user'],
       apps: ['halterofilia', 'boveda_digital'],
+      crypto_salt: this.UNIFIED_MASTER_SALT,
       subscription: {
-        plan: email.includes('pro') ? 'pro' : 'free',
+        plan: 'pro',
         status: 'active',
-        max_docs: email.includes('pro') ? -1 : 5,
-        cloud_sync_enabled: email.includes('pro'),
-        expires_at: new Date(Date.now() + 30 * 86400000).toISOString()
+        max_docs: -1,
+        cloud_sync_enabled: true,
+        expires_at: new Date(Date.now() + 365 * 86400000).toISOString()
       }
     };
 
     this.accessToken = this._generateMockJwt(mockPayload);
     this.refreshToken = 'rft_' + Math.random().toString(36).substr(2, 16);
     this.currentUser = mockPayload;
-    
-    // Obtener o generar Salt criptográfico para la derivación local de la clave
-    let existingSalt = await window.vaultStorage.getSetting('userSalt_' + mockPayload.email);
-    if (!existingSalt) {
-      existingSalt = window.vaultCrypto.generateRandomSalt(16);
-      await window.vaultStorage.setSetting('userSalt_' + mockPayload.email, existingSalt);
-    }
-    this.salt = existingSalt;
+    this.salt = this.UNIFIED_MASTER_SALT;
 
     // Persistir sesión segura
     await window.vaultStorage.setSetting('currentUser', this.currentUser);
     await window.vaultStorage.setSetting('accessToken', this.accessToken);
     await window.vaultStorage.setSetting('refreshToken', this.refreshToken);
+    await window.vaultStorage.setSetting('userSalt_' + mockPayload.email, this.salt);
     await window.vaultStorage.setSetting('userSalt', this.salt);
 
-    await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email, mode: 'local' });
+    await window.vaultStorage.logAuditEvent(this.currentUser.sub, 'LOGIN_SUCCESS', { email: cleanEmail, mode: 'local' });
     if (typeof window !== 'undefined' && window.vaultLicense) {
       window.vaultLicense.setUserEmail(this.currentUser.email);
     }
@@ -360,12 +429,12 @@ class VaultAuth {
       pinToUse = fallbackPin;
     }
 
-    // Asegurar que tengamos salt disponible
-    if (!this.salt) {
-      this.salt = (await window.vaultStorage.getSetting('userSalt_' + email)) || 
-                  (await window.vaultStorage.getSetting('userSalt')) || 
-                  'ae8713595fed1e759db1062454187513';
-    }
+    // Asegurar que tengamos el salt maestro unificado entre PC y Celular (Spec 012)
+    this.salt = this.UNIFIED_MASTER_SALT ||
+                this.salt ||
+                (await window.vaultStorage.getSetting('userSalt_' + email)) ||
+                (await window.vaultStorage.getSetting('userSalt')) ||
+                '226000658459336d4184642799fc8498';
 
     // Verificar si ya existe un hash guardado para este usuario
     const storedHash = await window.vaultStorage.getSetting('vaultPinHash_' + email);
@@ -493,7 +562,7 @@ class VaultAuth {
     const isLive = await this.checkServerConnection();
     if (!isLive) return false;
 
-    // 1. Si tenemos refreshToken, probar endpoint oficial de renovación
+    // 1. Si tenemos refreshToken, probar endpoint oficial de renovación enviando sub y email para nunca perder partición
     if (this.refreshToken && !this.refreshToken.startsWith('rft_mock')) {
       try {
         const res = await fetch(`${this.apiBaseUrl}/api/v1/auth/refresh`, {
@@ -502,7 +571,11 @@ class VaultAuth {
             'Content-Type': 'application/json',
             ...(this.accessToken ? { 'Authorization': `Bearer ${this.accessToken}` } : {})
           },
-          body: JSON.stringify({ refreshToken: this.refreshToken })
+          body: JSON.stringify({
+            refreshToken: this.refreshToken,
+            sub: this.currentUser?.sub || this.UNIFIED_VAULT_SUB,
+            email: this.currentUser?.email || 'andres.aguiar.marmol@gmail.com'
+          })
         });
         if (res.ok) {
           const data = await res.json();

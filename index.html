@@ -276,7 +276,8 @@
           <button id="btn-header-user-profile" title="Perfil del Usuario Registrado (Clic para ver o editar)"
             onclick="window.bovedaApp.openUserProfileModal();"
             class="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 transition-colors flex items-center gap-2 text-xs font-medium">
-            <div id="header-user-avatar-container" class="w-6 h-6 rounded-full overflow-hidden bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+            <div id="header-user-avatar-container"
+              class="w-6 h-6 rounded-full overflow-hidden bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
               <img id="header-user-avatar-img" src="" alt="Avatar" class="w-full h-full object-cover hidden">
               <i data-lucide="user" id="header-user-avatar-icon" class="w-3.5 h-3.5"></i>
             </div>
@@ -284,7 +285,8 @@
           </button>
 
           <!-- Badge de Licencia / Trial (Spec 003 / Halterofilia) -->
-          <div id="badge-license-status" class="badge-status cursor-pointer text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 transition-all bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+          <div id="badge-license-status"
+            class="badge-status cursor-pointer text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 transition-all bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
             onclick="window.bovedaApp.openLicenseModal();"
             title="Estado de Licencia y Período de Prueba (Clic para ver detalles)">
             <i data-lucide="clock" class="w-3.5 h-3.5" id="icon-license-badge"></i>
@@ -812,12 +814,14 @@
     <div class="w-[92vw] max-w-md vault-glass rounded-3xl border border-white/10 p-6 sm:p-7 text-white relative">
       <div class="flex items-center justify-between pb-3.5 border-b border-white/10 mb-4">
         <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+          <div
+            class="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
             <i data-lucide="user-check" class="w-5 h-5"></i>
           </div>
           <div>
             <h3 class="text-base font-bold text-white tracking-tight">Perfil del Usuario Registrado</h3>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold">1 Por Dispositivo</span>
+            <span
+              class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold">1 Por Dispositivo</span>
           </div>
         </div>
         <button type="button" onclick="window.bovedaApp.closeUserProfileModal();"
@@ -827,14 +831,17 @@
       </div>
 
       <!-- Aviso de Licencia de Dispositivo -->
-      <div class="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-slate-300 mb-4 flex items-start gap-2.5">
+      <div
+        class="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-slate-300 mb-4 flex items-start gap-2.5">
         <i data-lucide="shield-check" class="w-4 h-4 text-cyan-400 shrink-0 mt-0.5"></i>
         <div>
-          <strong class="text-cyan-300">Licencia de Dispositivo:</strong> 1 usuario registrado por dispositivo. Los datos ingresados se asociarán a la clave de solicitud de activación de este equipo.
+          <strong class="text-cyan-300">Licencia de Dispositivo:</strong> 1 usuario registrado por dispositivo. Los
+          datos ingresados se asociarán a la clave de solicitud de activación de este equipo.
         </div>
       </div>
 
-      <form id="form-user-profile" onsubmit="event.preventDefault(); window.bovedaApp.saveUserProfile();" class="space-y-4">
+      <form id="form-user-profile" onsubmit="event.preventDefault(); window.bovedaApp.saveUserProfile();"
+        class="space-y-4">
         <!-- Foto de Perfil con Cámara / Galería y Previsualización -->
         <div class="flex items-center gap-3.5 p-3 rounded-2xl bg-slate-900/60 border border-white/5">
           <div id="user-profile-photo-preview"
@@ -882,13 +889,15 @@
         </div>
 
         <div>
-          <label for="user-profile-email" class="block text-xs text-slate-400 mb-1 font-medium">Correo Electrónico:</label>
+          <label for="user-profile-email" class="block text-xs text-slate-400 mb-1 font-medium">Correo
+            Electrónico:</label>
           <input type="email" id="user-profile-email" placeholder="correo@ejemplo.com" required
             class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors">
         </div>
 
         <div>
-          <label for="user-profile-phone" class="block text-xs text-slate-400 mb-1 font-medium">Teléfono de Contacto:</label>
+          <label for="user-profile-phone" class="block text-xs text-slate-400 mb-1 font-medium">Teléfono de
+            Contacto:</label>
           <input type="tel" id="user-profile-phone" placeholder="+56 9 1234 5678"
             class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors">
         </div>
@@ -1052,14 +1061,16 @@
        MODAL DE SINCRONIZACIÓN EN LA NUBE / GOOGLE CLOUD RUN (ZERO-KNOWLEDGE)
        ========================================================================= -->
   <dialog id="modal-cloud-sync" class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-md">
-    <div class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
+    <div
+      class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
       <button onclick="document.getElementById('modal-cloud-sync').close();"
         class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/5">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
 
       <div class="flex items-center gap-3 mb-5">
-        <div class="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+        <div
+          class="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
           <i data-lucide="cloud" class="w-6 h-6"></i>
         </div>
         <div>
@@ -1069,23 +1080,27 @@
       </div>
 
       <!-- Garantía Criptográfica Zero-Knowledge -->
-      <div class="p-3.5 rounded-2xl bg-sky-500/5 border border-sky-500/20 text-xs text-sky-300/90 mb-5 flex items-start gap-2.5">
+      <div
+        class="p-3.5 rounded-2xl bg-sky-500/5 border border-sky-500/20 text-xs text-sky-300/90 mb-5 flex items-start gap-2.5">
         <i data-lucide="shield-check" class="w-4 h-4 text-sky-400 shrink-0 mt-0.5"></i>
-        <span><strong>Zero-Knowledge en Google Cloud:</strong> El servidor en la nube solo almacena payloads cifrados con AES-256-GCM. Nadie puede leer tus expedientes sin tu PIN maestro.</span>
+        <span><strong>Zero-Knowledge en Google Cloud:</strong> El servidor en la nube solo almacena payloads cifrados
+          con AES-256-GCM. Nadie puede leer tus expedientes sin tu PIN maestro.</span>
       </div>
 
       <!-- Estado de Conexión -->
       <div class="bg-slate-950/60 border border-white/5 rounded-2xl p-4 mb-5 space-y-3">
         <div class="flex items-center justify-between">
           <span class="text-xs text-slate-400 font-medium">Estado del Servidor:</span>
-          <span id="cloud-modal-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-white/10">
+          <span id="cloud-modal-status-badge"
+            class="px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-white/10">
             <span id="cloud-modal-status-led" class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
             <span id="cloud-modal-status-text">Comprobando...</span>
           </span>
         </div>
         <div class="flex items-center justify-between text-xs">
           <span class="text-slate-400">Servidor Activo:</span>
-          <span id="cloud-modal-url-text" class="text-slate-300 font-mono text-[11px] break-all select-all">cargando...</span>
+          <span id="cloud-modal-url-text"
+            class="text-slate-300 font-mono text-[11px] break-all select-all">cargando...</span>
         </div>
       </div>
 
@@ -1100,12 +1115,15 @@
 
       <!-- Configuración del Servidor Cloud Run -->
       <details id="details-cloud-settings" class="text-xs border-t border-white/5 pt-4">
-        <summary class="cursor-pointer text-slate-400 hover:text-slate-300 flex items-center gap-1.5 font-medium select-none">
+        <summary
+          class="cursor-pointer text-slate-400 hover:text-slate-300 flex items-center gap-1.5 font-medium select-none">
           <i data-lucide="server" class="w-3.5 h-3.5"></i> Configurar URL de Google Cloud Run
         </summary>
         <div class="mt-3 space-y-3">
           <p class="text-[11px] text-slate-400 leading-relaxed">
-            Si desplegaste tu servidor en <strong>Google Cloud Run</strong>, ingresa aquí la URL de tu servicio (ejemplo: <code>https://boveda-digital-xxxx.run.app</code>) para que este dispositivo se sincronice directamente con él:
+            Si desplegaste tu servidor en <strong>Google Cloud Run</strong>, ingresa aquí la URL de tu servicio
+            (ejemplo: <code>https://boveda-digital-xxxx.run.app</code>) para que este dispositivo se sincronice
+            directamente con él:
           </p>
           <input type="url" id="input-cloud-api-url" placeholder="https://boveda-digital-xxxx.a.run.app"
             class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs font-mono focus:border-sky-400 focus:outline-none">
@@ -1134,14 +1152,16 @@
        MODAL DE SINCRONIZACIÓN CON GOOGLE DRIVE (ZERO-KNOWLEDGE)
        ========================================================================= -->
   <dialog id="modal-gdrive-sync" class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-md">
-    <div class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
+    <div
+      class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
       <button onclick="document.getElementById('modal-gdrive-sync').close();"
         class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/5">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
 
       <div class="flex items-center gap-3 mb-5">
-        <div class="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+        <div
+          class="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
           <i data-lucide="hard-drive" class="w-6 h-6"></i>
         </div>
         <div>
@@ -1151,16 +1171,19 @@
       </div>
 
       <!-- Garantía Criptográfica Zero-Knowledge -->
-      <div class="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-300/90 mb-5 flex items-start gap-2.5">
+      <div
+        class="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-300/90 mb-5 flex items-start gap-2.5">
         <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
-        <span><strong>Seguridad Máxima:</strong> Tu archivo de respaldo se sube 100% cifrado con AES-256-GCM. Google jamás tiene acceso a tu PIN maestro ni puede descifrar tus documentos.</span>
+        <span><strong>Seguridad Máxima:</strong> Tu archivo de respaldo se sube 100% cifrado con AES-256-GCM. Google
+          jamás tiene acceso a tu PIN maestro ni puede descifrar tus documentos.</span>
       </div>
 
       <!-- Estado de Conexión -->
       <div class="bg-slate-950/60 border border-white/5 rounded-2xl p-4 mb-5 space-y-3">
         <div class="flex items-center justify-between">
           <span class="text-xs text-slate-400 font-medium">Estado de Conexión:</span>
-          <span id="gdrive-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-white/10">
+          <span id="gdrive-status-badge"
+            class="px-2.5 py-1 rounded-full text-[11px] font-mono font-medium flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-white/10">
             <span id="gdrive-status-led" class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
             <span id="gdrive-status-text">Desconectado</span>
           </span>
@@ -1181,7 +1204,9 @@
           <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" id="toggle-gdrive-autosync" class="sr-only peer" checked
               onchange="window.bovedaApp.handleGoogleDriveToggleAutoSync(this.checked);">
-            <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+            <div
+              class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500">
+            </div>
           </label>
         </div>
       </div>
@@ -1211,11 +1236,13 @@
 
       <!-- Configuración Avanzada / OAuth Client ID -->
       <details class="text-xs border-t border-white/5 pt-4">
-        <summary class="cursor-pointer text-slate-400 hover:text-slate-300 flex items-center gap-1.5 font-medium select-none">
+        <summary
+          class="cursor-pointer text-slate-400 hover:text-slate-300 flex items-center gap-1.5 font-medium select-none">
           <i data-lucide="settings" class="w-3.5 h-3.5"></i> Configuración de Google OAuth Client ID
         </summary>
         <div class="mt-3 space-y-2">
-          <p class="text-[11px] text-slate-400">Si utilizas tu propia consola de Google Cloud, ingresa tu <strong>Client ID</strong> Web (alcance: <code>drive.file</code>):</p>
+          <p class="text-[11px] text-slate-400">Si utilizas tu propia consola de Google Cloud, ingresa tu <strong>Client
+              ID</strong> Web (alcance: <code>drive.file</code>):</p>
           <input type="text" id="input-gdrive-client-id" placeholder="ej. 123456789-xxxx.apps.googleusercontent.com"
             class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-white text-xs font-mono focus:border-amber-400 focus:outline-none">
           <div class="flex justify-end pt-1">
@@ -1232,15 +1259,18 @@
   <!-- =========================================================================
        MODAL ASISTENTE DE PIN DE RESPALDO (MIGRACIÓN MULTI-DISPOSITIVO)
        ========================================================================= -->
-  <dialog id="modal-backup-pin-prompt" class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-md">
-    <div class="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
+  <dialog id="modal-backup-pin-prompt"
+    class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-md">
+    <div
+      class="w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
       <button onclick="window.bovedaApp.cancelBackupPinUnlock();"
         class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/5">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
 
       <div class="flex items-center gap-3 mb-4">
-        <div class="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+        <div
+          class="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
           <i data-lucide="key-round" class="w-5 h-5"></i>
         </div>
         <div>
@@ -1250,12 +1280,15 @@
       </div>
 
       <div class="p-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs text-slate-300 mb-5 leading-relaxed">
-        <p>Este respaldo fue generado en otro dispositivo protegido con un PIN maestro específico. Ingresa el <strong>PIN original del respaldo</strong> para descifrar y normalizar automáticamente tus expedientes en este celular:</p>
+        <p>Este respaldo fue generado en otro dispositivo protegido con un PIN maestro específico. Ingresa el
+          <strong>PIN original del respaldo</strong> para descifrar y normalizar automáticamente tus expedientes en este
+          celular:</p>
       </div>
 
       <form onsubmit="event.preventDefault(); window.bovedaApp.submitBackupPinUnlock();" class="space-y-4">
         <div>
-          <label for="input-backup-pin" class="block text-xs font-medium text-slate-400 mb-2">PIN Maestro del Respaldo:</label>
+          <label for="input-backup-pin" class="block text-xs font-medium text-slate-400 mb-2">PIN Maestro del
+            Respaldo:</label>
           <input type="password" id="input-backup-pin" inputmode="numeric" maxlength="12" autofocus
             placeholder="Ingresa el PIN (ej. 123456)"
             class="w-full text-center text-xl tracking-widest font-mono py-3 px-4 rounded-xl bg-slate-950 border border-white/10 text-amber-300 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400">
@@ -1281,31 +1314,40 @@
   <!-- =========================================================================
        MODAL: ONBOARDING PRIMER USO — IDENTIFICACIÓN OBLIGATORIA Y VALIDACIÓN POR EMAIL
        ========================================================================= -->
-  <dialog id="modal-first-run-onboarding" class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/95 backdrop:backdrop-blur-xl"
+  <dialog id="modal-first-run-onboarding"
+    class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/95 backdrop:backdrop-blur-xl"
     oncancel="event.preventDefault();">
-    <div class="w-[94vw] max-w-lg bg-slate-900 border-2 border-emerald-500/30 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl shadow-emerald-950/50 max-h-[92vh] overflow-y-auto">
-      
+    <div
+      class="w-[94vw] max-w-lg bg-slate-900 border-2 border-emerald-500/30 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl shadow-emerald-950/50 max-h-[92vh] overflow-y-auto">
+
       <!-- Paso 1: Ficha de Identificación -->
       <div id="onboarding-step-1">
         <div class="flex items-center gap-3.5 mb-5 pb-4 border-b border-white/10">
-          <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-lg shadow-emerald-500/10">
+          <div
+            class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-lg shadow-emerald-500/10">
             <i data-lucide="shield-check" class="w-7 h-7"></i>
           </div>
           <div>
-            <span class="text-[10px] font-mono uppercase tracking-wider font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Paso 1 de 2 • Primer Uso</span>
+            <span
+              class="text-[10px] font-mono uppercase tracking-wider font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Paso
+              1 de 2 • Primer Uso</span>
             <h3 class="text-xl font-extrabold text-white mt-1">Identificación del Usuario</h3>
             <p class="text-xs text-slate-400">Completa tu ficha para vincular y asegurar este dispositivo</p>
           </div>
         </div>
 
-        <div class="p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-slate-300 mb-5 flex items-start gap-3">
+        <div
+          class="p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-slate-300 mb-5 flex items-start gap-3">
           <i data-lucide="info" class="w-4 h-4 text-cyan-400 shrink-0 mt-0.5"></i>
           <div>
-            <strong class="text-cyan-300">Registro Obligatorio:</strong> Por seguridad de tu billetera y licencia de dispositivo, debes llenar todos los datos de tu ficha. Luego enviaremos un código validador a tu correo electrónico.
+            <strong class="text-cyan-300">Registro Obligatorio:</strong> Por seguridad de tu billetera y licencia de
+            dispositivo, debes llenar todos los datos de tu ficha. Luego enviaremos un código validador a tu correo
+            electrónico.
           </div>
         </div>
 
-        <form id="form-onboarding-step-1" onsubmit="event.preventDefault(); window.bovedaApp.handleOnboardingSubmitStep1();" class="space-y-4">
+        <form id="form-onboarding-step-1"
+          onsubmit="event.preventDefault(); window.bovedaApp.handleOnboardingSubmitStep1();" class="space-y-4">
           <!-- Foto de Perfil (Opcional pero disponible con cámara y galería) -->
           <div class="flex items-center gap-3.5 p-3 rounded-2xl bg-slate-950/60 border border-white/10">
             <div id="onboarding-photo-preview"
@@ -1330,7 +1372,8 @@
                   class="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-semibold flex items-center gap-1 transition-colors">
                   <i data-lucide="image" class="w-3.5 h-3.5"></i> Galería
                 </button>
-                <button type="button" id="btn-onboarding-remove-photo" onclick="window.bovedaApp.removeOnboardingPhoto();"
+                <button type="button" id="btn-onboarding-remove-photo"
+                  onclick="window.bovedaApp.removeOnboardingPhoto();"
                   class="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold hidden items-center gap-1 transition-colors">
                   <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Quitar
                 </button>
@@ -1399,22 +1442,28 @@
       <!-- Paso 2: Validación de Código OTP -->
       <div id="onboarding-step-2" class="hidden">
         <div class="flex items-center gap-3.5 mb-5 pb-4 border-b border-white/10">
-          <div class="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0 shadow-lg shadow-cyan-500/10">
+          <div
+            class="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0 shadow-lg shadow-cyan-500/10">
             <i data-lucide="mail-check" class="w-7 h-7"></i>
           </div>
           <div>
-            <span class="text-[10px] font-mono uppercase tracking-wider font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">Paso 2 de 2 • Verificación</span>
+            <span
+              class="text-[10px] font-mono uppercase tracking-wider font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">Paso
+              2 de 2 • Verificación</span>
             <h3 class="text-xl font-extrabold text-white mt-1">Ingresa el Código</h3>
             <p class="text-xs text-slate-400">Revisa tu bandeja de entrada o spam</p>
           </div>
         </div>
 
-        <div class="p-3.5 rounded-2xl bg-slate-950/80 border border-white/10 text-xs text-slate-300 mb-5 leading-relaxed">
+        <div
+          class="p-3.5 rounded-2xl bg-slate-950/80 border border-white/10 text-xs text-slate-300 mb-5 leading-relaxed">
           <p>Hemos enviado un código de 6 dígitos al correo:</p>
-          <p class="font-mono font-bold text-emerald-400 text-sm mt-1 select-all" id="onboarding-verify-target-email">correo@ejemplo.com</p>
+          <p class="font-mono font-bold text-emerald-400 text-sm mt-1 select-all" id="onboarding-verify-target-email">
+            correo@ejemplo.com</p>
         </div>
 
-        <form id="form-onboarding-step-2" onsubmit="event.preventDefault(); window.bovedaApp.handleOnboardingSubmitStep2();" class="space-y-5">
+        <form id="form-onboarding-step-2"
+          onsubmit="event.preventDefault(); window.bovedaApp.handleOnboardingSubmitStep2();" class="space-y-5">
           <div>
             <label for="onboarding-otp-input" class="block text-xs font-semibold text-slate-300 mb-2 text-center">
               Código de Seguridad (6 Dígitos):
@@ -1425,11 +1474,13 @@
               class="w-full text-center text-2xl font-mono font-extrabold tracking-[0.4em] py-3.5 rounded-2xl bg-slate-950 border-2 border-cyan-500/40 text-cyan-400 focus:outline-none focus:border-cyan-400 shadow-inner">
           </div>
 
-          <div id="onboarding-simulated-code-alert" class="hidden p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300">
+          <div id="onboarding-simulated-code-alert"
+            class="hidden p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300">
             <div class="flex items-center gap-1.5 font-bold mb-0.5">
               <i data-lucide="code" class="w-4 h-4"></i> Código generado para pruebas:
             </div>
-            <span id="onboarding-simulated-code-val" class="font-mono font-extrabold text-base tracking-widest text-white"></span>
+            <span id="onboarding-simulated-code-val"
+              class="font-mono font-extrabold text-base tracking-widest text-white"></span>
           </div>
 
           <div class="space-y-2 pt-2">
@@ -1461,20 +1512,26 @@
        ========================================================================= -->
   <dialog id="modal-trial-lock" class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/95 backdrop:backdrop-blur-xl"
     oncancel="event.preventDefault();">
-    <div class="w-full max-w-lg bg-slate-900 border-2 border-rose-500/30 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl shadow-rose-950/50">
+    <div
+      class="w-full max-w-lg bg-slate-900 border-2 border-rose-500/30 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl shadow-rose-950/50">
       <div class="flex items-center gap-3.5 mb-5">
-        <div class="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0 shadow-lg shadow-rose-500/10">
+        <div
+          class="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0 shadow-lg shadow-rose-500/10">
           <i data-lucide="shield-alert" class="w-7 h-7"></i>
         </div>
         <div>
-          <span class="text-[10px] font-mono uppercase tracking-wider font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">Acceso Restringido</span>
+          <span
+            class="text-[10px] font-mono uppercase tracking-wider font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">Acceso
+            Restringido</span>
           <h3 class="text-xl font-extrabold text-white mt-1">Período de Prueba Expirado</h3>
           <p class="text-xs text-slate-400">Tus 7 días de evaluación gratuita han finalizado</p>
         </div>
       </div>
 
-      <div class="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs text-slate-300 mb-5 leading-relaxed space-y-2">
-        <p>Para desbloquear tu Bóveda Digital de forma 100% offline y continuar gestionando tus expedientes de manera privada, solicita tu <strong>Token de Activación</strong> al administrador del sistema.</p>
+      <div
+        class="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs text-slate-300 mb-5 leading-relaxed space-y-2">
+        <p>Para desbloquear tu Bóveda Digital de forma 100% offline y continuar gestionando tus expedientes de manera
+          privada, solicita tu <strong>Token de Activación</strong> al administrador del sistema.</p>
         <p class="text-[11px] text-slate-400 flex items-center gap-1.5 pt-1">
           <i data-lucide="phone" class="w-3.5 h-3.5 text-emerald-400"></i>
           Soporte / Activación Directa: <strong class="text-emerald-400 select-all">+56933395447</strong>
@@ -1488,11 +1545,9 @@
           <span id="lock-device-id" class="font-mono font-bold text-cyan-400 select-all">cargando...</span>
         </div>
         <div>
-          <label for="lock-user-email-input" class="block text-[11px] text-slate-400 mb-1 font-medium">Usuario / Correo para la Licencia:</label>
-          <input type="text" id="lock-user-email-input"
-            oninput="window.bovedaApp.handleLicenseEmailChange('lock', this.value);"
-            value="su-usuario@dominio.com"
-            placeholder="su-usuario@dominio.com"
+          <label for="lock-user-email-input" class="block text-[11px] text-slate-400 mb-1 font-medium">Correo Electrónico:</label>
+          <input type="email" id="lock-user-email-input"
+            oninput="window.bovedaApp.handleLicenseEmailChange('lock', this.value);" placeholder="usuario@correo.com"
             class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-emerald-300 font-mono text-xs focus:border-emerald-400 focus:outline-none">
           <span id="lock-user-email-display" class="hidden"></span>
         </div>
@@ -1501,7 +1556,8 @@
           <div class="flex items-center gap-2">
             <input type="text" id="lock-cadena-solicitud" readonly
               class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-amber-300 font-mono text-xs select-all focus:outline-none">
-            <button type="button" onclick="window.bovedaApp.copyLicenseRequestString('lock');" title="Copiar código de solicitud"
+            <button type="button" onclick="window.bovedaApp.copyLicenseRequestString('lock');"
+              title="Copiar código de solicitud"
               class="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1 shrink-0 transition-all">
               <i data-lucide="copy" class="w-4 h-4"></i>
               <span>Copiar</span>
@@ -1524,7 +1580,8 @@
           <label for="input-activation-token-lock" class="block text-xs font-semibold text-slate-300 mb-1.5">
             Ingresa tu Token de Activación Offline:
           </label>
-          <textarea id="input-activation-token-lock" rows="2" required placeholder="Pega aquí el token Base64 recibido..."
+          <textarea id="input-activation-token-lock" rows="2" required
+            placeholder="Pega aquí el token Base64 recibido..."
             class="w-full p-3 rounded-xl bg-slate-950 border border-white/10 text-emerald-300 font-mono text-xs focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"></textarea>
         </div>
 
@@ -1542,15 +1599,18 @@
   <!-- =========================================================================
        MODAL DE INFORMACIÓN Y ACTIVACIÓN PROACTIVA DE LICENCIA
        ========================================================================= -->
-  <dialog id="modal-license-info" class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-md">
-    <div class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
+  <dialog id="modal-license-info"
+    class="vault-modal rounded-3xl p-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-md">
+    <div
+      class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 text-white relative shadow-2xl">
       <button onclick="document.getElementById('modal-license-info').close();"
         class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/5">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
 
       <div class="flex items-center gap-3 mb-5">
-        <div class="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+        <div
+          class="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
           <i data-lucide="shield-check" class="w-6 h-6"></i>
         </div>
         <div>
@@ -1562,7 +1622,8 @@
       <div class="bg-slate-950/60 border border-white/5 rounded-2xl p-4 mb-5 space-y-3">
         <div class="flex items-center justify-between text-xs">
           <span class="text-slate-400">Estado de Licencia:</span>
-          <span id="info-license-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span id="info-license-status-badge"
+            class="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             cargando...
           </span>
         </div>
@@ -1575,11 +1636,9 @@
           <span id="info-device-id" class="font-mono text-cyan-400 select-all">cargando...</span>
         </div>
         <div class="pt-1">
-          <label for="info-user-email-input" class="block text-[11px] text-slate-400 mb-1 font-medium">Usuario / Correo Electrónico:</label>
-          <input type="text" id="info-user-email-input"
-            oninput="window.bovedaApp.handleLicenseEmailChange('info', this.value);"
-            value="su-usuario@dominio.com"
-            placeholder="su-usuario@dominio.com"
+          <label for="info-user-email-input" class="block text-[11px] text-slate-400 mb-1 font-medium">Correo Electrónico:</label>
+          <input type="email" id="info-user-email-input"
+            oninput="window.bovedaApp.handleLicenseEmailChange('info', this.value);" placeholder="usuario@correo.com"
             class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-emerald-300 font-mono text-xs focus:border-emerald-400 focus:outline-none">
         </div>
       </div>
@@ -1606,7 +1665,8 @@
       </div>
 
       <!-- Ingreso de Token de Activación -->
-      <form onsubmit="event.preventDefault(); window.bovedaApp.submitLicenseActivation('info');" class="space-y-3 pt-3 border-t border-white/10">
+      <form onsubmit="event.preventDefault(); window.bovedaApp.submitLicenseActivation('info');"
+        class="space-y-3 pt-3 border-t border-white/10">
         <div>
           <label for="input-activation-token-info" class="block text-xs font-semibold text-slate-300 mb-1.5">
             Activar con Token Offline:
@@ -1646,12 +1706,12 @@
   </footer>
 
   <!-- Scripts del Ecosistema Bóveda Digital -->
-  <script src="assets/js/crypto.js"></script>
-  <script src="assets/js/storage.js"></script>
-  <script src="assets/js/auth.js"></script>
-  <script src="assets/js/license.js"></script>
-  <script src="assets/js/gdrive.js"></script>
-  <script src="assets/js/app.js"></script>
+  <script src="assets/js/crypto.js?v=15"></script>
+  <script src="assets/js/storage.js?v=15"></script>
+  <script src="assets/js/auth.js?v=15"></script>
+  <script src="assets/js/license.js?v=15"></script>
+  <script src="assets/js/gdrive.js?v=15"></script>
+  <script src="assets/js/app.js?v=15"></script>
 </body>
 
 </html>

@@ -40,4 +40,3 @@ Archivos y responsabilidades · Funciones puras (con "hoy" como parámetro) · A
 Máximo 20-30 min por tarea, en orden de dependencia. Si salen más de 10, propón dividir la spec.
 ## Implementación
 Una sola tarea cada vez: tests primero (en rojo), después el código, `node --test` en verde, marcar la tarea y parar.
-16

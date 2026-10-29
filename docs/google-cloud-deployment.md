@@ -6,7 +6,7 @@ Esta guía documenta los pasos para desplegar **Bóveda Digital** en la nube de 
 
 ## 1. Requisitos Previos
 
-1. Tener una cuenta en [Google Cloud Console](https://console.cloud.google.com/).
+1. Tener una cuenta en [Google Cloud Console](/https://console.cloud.google.com).
 2. Instalar el CLI oficial de Google Cloud: [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install).
 3. Iniciar sesión en tu terminal con:
    ```bash
@@ -21,10 +21,12 @@ Selecciona o crea el proyecto donde se alojará la Bóveda:
 
 ```bash
 # Listar tus proyectos de Google Cloud
-gcloud projects list
+
+
 
 # Establecer el proyecto activo (reemplaza TU_PROJECT_ID)
-gcloud config set project TU_PROJECT_ID
+
+
 
 # Habilitar los servicios necesarios (Cloud Run y Cloud Build)
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com

@@ -130,6 +130,9 @@ class VaultAuth {
       this.currentUser = savedUser;
       this.accessToken = savedToken;
       this.refreshToken = savedRefreshToken;
+      if (userSalt && userSalt !== this.UNIFIED_MASTER_SALT && window.vaultStorage) {
+        window.vaultStorage.setSetting('last_imported_salt', userSalt).catch(() => {});
+      }
       this.salt = this.UNIFIED_MASTER_SALT || userSalt;
       if (window.vaultStorage) {
         window.vaultStorage.setSetting('currentUser', this.currentUser).catch(() => {});

@@ -914,25 +914,17 @@ const server = http.createServer(async (req, res) => {
       // 9. POST /api/v1/documents/batch-sync (Sincronización en lote Zero-Knowledge)
       if (pathname === '/api/v1/documents/batch-sync' && req.method === 'POST') {
         const body = await parseJSONBody(req);
-        const { documents = [], customDrawers = null, deletedIds = [] } = body;
+        const { documents = [], customDrawers = null } = body;
         const partition = resolveVaultPartition(authUser);
-
-        if (Array.isArray(deletedIds) && db.deletedIds) {
-          for (const delId of deletedIds) {
-            if (delId && typeof delId === 'string') {
-              db.deletedIds.add(delId);
-            }
-          }
-        }
 
         let userDocs = (db.documents.get(partition) || []).filter(
           d => d && d.id && !(db.deletedIds && db.deletedIds.has(d.id))
         );
 
-        // Fusionar documentos respetando eliminaciones previas y evitando duplicados por (category, title)
+        // Spec 013: Fusionar documentos sin permitir jamás borrados masivos desde batch-sync
+        // (las eliminaciones sólo ocurren vía DELETE /api/v1/documents/:id explícito del usuario)
         documents.forEach(doc => {
           if (!doc || !doc.id) return;
-          // No re-insertar documentos que ya fueron eliminados explícitamente o que sean demos auto-sembrados
           if ((db.deletedIds && db.deletedIds.has(doc.id)) || String(doc.id).startsWith('doc_demo_')) {
             return;
           }
@@ -944,19 +936,7 @@ const server = http.createServer(async (req, res) => {
               userDocs[idx] = { ...userDocs[idx], ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() };
             }
           } else {
-            const normCat = String(doc.category || 'identidad').trim().toLowerCase();
-            const normTitle = String(doc.title || '').trim().toLowerCase();
-            const dupIdx = normTitle ? userDocs.findIndex(d =>
-              String(d.category || 'identidad').trim().toLowerCase() === normCat &&
-              String(d.title || '').trim().toLowerCase() === normTitle
-            ) : -1;
-
-            if (dupIdx >= 0) {
-              // Evitar duplicación: conservar el registro canónico y registrar el ID duplicado como eliminado
-              if (db.deletedIds) db.deletedIds.add(doc.id);
-            } else {
-              userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
-            }
+            userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
           }
         });
 

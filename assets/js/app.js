@@ -311,7 +311,6 @@ class BovedaApp {
     }
 
     this.unlockedDocuments = [];
-    const undecryptableIds = [];
     let failedCount = 0;
     let reEncryptedCount = 0;
 
@@ -404,22 +403,11 @@ class BovedaApp {
         });
       } else {
         failedCount++;
-        undecryptableIds.push(raw.id);
         console.warn('[BovedaApp] Documento no pudo ser descifrado:', raw.id, raw.title);
       }
     }
 
-    // Si la clave maestra descifró expedientes válidos, limpiar de IndexedDB registros huérfanos/indescifrables
-    // para que nunca vuelvan a subirse a la nube ni causen duplicados
-    if (this.unlockedDocuments.length > 0 && undecryptableIds.length > 0) {
-      for (const zombieId of undecryptableIds) {
-        try {
-          await window.vaultStorage.deleteDocument(zombieId, true);
-        } catch (e) {}
-      }
-    }
-
-    // Deduplicar expedientes en memoria e IndexedDB por (category, title normalizado, doc_number normalizado)
+    // Spec 013: Deduplicar únicamente en memoria para visualización sin eliminar jamás registros de IndexedDB automáticamente
     const seenKeys = new Map();
     const deduplicatedDocs = [];
     for (const doc of this.unlockedDocuments) {
@@ -427,10 +415,6 @@ class BovedaApp {
       if (!seenKeys.has(dedupKey)) {
         seenKeys.set(dedupKey, doc);
         deduplicatedDocs.push(doc);
-      } else {
-        try {
-          await window.vaultStorage.deleteDocument(doc.id, true);
-        } catch (e) {}
       }
     }
     this.unlockedDocuments = deduplicatedDocs;
@@ -2851,23 +2835,18 @@ class BovedaApp {
         }
       }
 
-      // 1. Obtener todos los documentos, tombstones de eliminación y gavetas locales de IndexedDB
+      // 1. Obtener todos los documentos y gavetas locales de IndexedDB (excluyendo eliminados y demos)
       const rawLocalDocs = await window.vaultStorage.getAllDocuments(user.sub);
       const deletedIds = typeof window.vaultStorage.getDeletedIds === 'function' ? await window.vaultStorage.getDeletedIds() : [];
       const deletedSet = new Set(deletedIds);
-      const unlockedIdSet = (this.unlockedDocuments && this.unlockedDocuments.length > 0)
-        ? new Set(this.unlockedDocuments.map(d => d.id))
-        : null;
-      // Filtrar para no subir jamás registros eliminados, demos locales ni registros indescifrables
       const localDocs = rawLocalDocs.filter(d =>
         d && d.id &&
         !deletedSet.has(d.id) &&
-        !String(d.id).startsWith('doc_demo_') &&
-        (!unlockedIdSet || unlockedIdSet.has(d.id))
+        !String(d.id).startsWith('doc_demo_')
       );
       const localCustomDrawers = (await window.vaultStorage.getSetting('customDrawers_' + user.sub)) || {};
 
-      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados, tombstones y estructura de gavetas)
+      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados y estructura de gavetas)
       if (token) {
         const controllerSync = new AbortController();
         const timeoutSync = setTimeout(() => controllerSync.abort(), 12000);
@@ -2878,7 +2857,7 @@ class BovedaApp {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers, deletedIds }),
+          body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers }),
           signal: controllerSync.signal
         }).catch(err => {
           console.warn('[BovedaApp] Petición batch-sync diferida:', err.message);
@@ -2897,7 +2876,7 @@ class BovedaApp {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
               },
-              body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers, deletedIds })
+              body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers })
             }).catch(() => null);
           }
         }

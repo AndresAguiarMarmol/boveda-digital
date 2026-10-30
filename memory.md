@@ -117,11 +117,22 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - *Partición Canónica Unificada (`usr_pro_001`) y Sal Maestra Compartida (`MASTER_CRYPTO_SALT`):* En `server.js`, `resolveVaultPartition(authUser)` enruta todas las cuentas del propietario y cuentas de dispositivo (`andres.aguiar.marmol@gmail.com`, `andres.pro@boveda.com`, `demo.free@boveda.com`, `atleta@halterofilia.com`, `su-usuario@dominio.com`) hacia la misma partición de bóveda `usr_pro_001` y sal maestra `'226000658459336d4184642799fc8498'`. En `POST /api/v1/auth/refresh`, `decodeJWTWithoutExpiry()` preserva el `sub` y `email` originales del token en vez de degradar a `'usr_refreshed'`.
   - *Sincronización de Gavetas Personalizadas (`customDrawers`), Borrados (`deletedIds`) y Consolidación Local:* `GET /api/v1/documents` y `POST /api/v1/documents/batch-sync` sincronizan tanto los documentos como `customDrawers` (incluyendo `gaveta_documentos_registrad_m6ses` — `"Documentos Registrados"`) y `deletedIds`. En el cliente, `VaultStorage.getAllDocuments()` consolida todos los expedientes válidos de `IndexedDB` sin quedar huérfanos por cambios previos de `user_id`, y `loadAndRenderDocuments()` sincroniza con la nube antes de sembrar demos y reconstruye automáticamente gavetas personalizadas presentes en los documentos.
   - *Sincronización Reactiva Automática:* La app sincroniza con Cloud Run al iniciar, al crear/editar/borrar documentos o gavetas, y reactivamente en los eventos `online`, `window.focus` y `document.visibilitychange`.
-  - Service Worker actualizado a `boveda-digital-v16` con `cache: 'no-store'`, query string `?v=16` en `index.html`, persistencia local y remota de tombstones (`deletedDocIds`), bloqueo definitivo de re-sembrado de demos (`boveda_demos_seeded`) y deduplicación automática de expedientes.
+  - Service Worker actualizado a `boveda-digital-v17` con `cache: 'no-store'`, query string `?v=17` en `index.html`, protección estricta contra auto-borrado (`Spec 013`), saneamiento automático de tombstones (`boveda_v17_tombstones_sanitized`) y bloqueo de re-sembrado de demos (`boveda_demos_seeded`).
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-30 — Spec 013: Protección de Integridad Contra Auto-Borrado y Restauración de Expedientes (v17)
+- **Diagnóstico del Incidente en `v16` (`11:55 AM` / `14:55:04Z`):**
+  - El bucle de limpieza de `undecryptableIds` introducido en `v16` dentro de `loadAndRenderDocuments()` invocó `deleteDocument(zombieId, true)` sobre copias locales en `IndexedDB` de la PC que tenían un `updated_at` más reciente pero habían sido re-cifradas previamente con la sal local antigua de la PC. Al registrar esos IDs en `deletedIds` y enviarlos en `POST /api/v1/documents/batch-sync`, Cloud Run los añadió a `db.deletedIds` y vació la colección remota.
+- **Corrección Quirúrgica y Restauración (`assets/js/app.js`, `assets/js/storage.js`, `assets/js/auth.js`, `server.js`, `data/vault_cloud.json`):**
+  - En `assets/js/app.js`: eliminado por completo el auto-borrado de `undecryptableIds` y el auto-borrado en `IndexedDB` por coincidencia de título/categoría. Un documento **jamás** se elimina sin que el usuario pulse explícitamente el botón Eliminar (`handleDeleteSelectedDocument`).
+  - En `server.js`: eliminada la ingesta de `deletedIds` y el borrado heurístico desde `POST /api/v1/documents/batch-sync`. Las bajas en el servidor ocurren exclusivamente mediante `DELETE /api/v1/documents/:id`.
+  - En `data/vault_cloud.json` y `assets/js/storage.js`: restaurados los 10 expedientes personales reales con `updated_at: '2026-10-30T15:05:00.000Z'` y añadido el saneamiento automático `boveda_v17_tombstones_sanitized` en `VaultStorage.getDeletedIds()` para limpiar los IDs de los expedientes reales que quedaron bloqueados en `localStorage`/`IndexedDB` de PC e iPhone.
+  - En `assets/js/auth.js`: preservación de `userSalt` previa en `last_imported_salt` antes de aplicar `UNIFIED_MASTER_SALT`.
+- **Service Worker v17 (`sw.js`, `index.html`, `tests/boveda.test.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v17'` y `?v=17` en `index.html`. **65/65 pruebas pasando al 100% en verde**.
 
 ### 2026-10-30 — Corrección de Regeneración de Registros de Prueba Eliminados y Deduplicación de Expedientes (v16)
 - **Erradicación de Regeneración de Documentos Demo (`assets/js/app.js`, `assets/js/storage.js`, `server.js`, `data/vault_cloud.json`):**

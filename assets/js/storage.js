@@ -92,9 +92,22 @@ class VaultStorage {
 
   /**
    * Obtiene la lista persistente de IDs de documentos eliminados (tombstones)
+   * e incluye saneamiento automático (Spec 013) para restaurar expedientes reales afectados en v16
    * @returns {Promise<Array<string>>}
    */
   async getDeletedIds() {
+    const canonicalProtectedIds = new Set([
+      'doc_huzcvq2ff',
+      'doc_ekd0onmfw',
+      'doc_ps25oua80',
+      'doc_9lskrlugo',
+      'doc_yjdulku41',
+      'doc_kzs5fj88v',
+      'doc_rehd8z4vp',
+      'doc_teu75glli',
+      'doc_vqp0qhkbm',
+      'doc_ymzsioywq'
+    ]);
     const ids = new Set([
       'doc_bba1vso67',
       'doc_lroukh0y9',
@@ -102,19 +115,56 @@ class VaultStorage {
       'doc_shm2e0xo1',
       'doc_zyd7diy5s'
     ]);
+    let needsSanitizeSave = false;
+    const isSanitizedV17 = typeof localStorage !== 'undefined' && localStorage.getItem('boveda_v17_tombstones_sanitized') === 'true';
+
     try {
       if (typeof localStorage !== 'undefined') {
         const raw = localStorage.getItem('boveda_deleted_doc_ids');
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) parsed.forEach(id => id && ids.add(id));
+          if (Array.isArray(parsed)) {
+            parsed.forEach(id => {
+              if (!id) return;
+              if (!isSanitizedV17 && canonicalProtectedIds.has(id)) {
+                needsSanitizeSave = true;
+                return;
+              }
+              ids.add(id);
+            });
+          }
         }
       }
     } catch (e) {}
     try {
       const saved = await this.getSetting('deletedDocIds');
-      if (Array.isArray(saved)) saved.forEach(id => id && ids.add(id));
+      if (Array.isArray(saved)) {
+        saved.forEach(id => {
+          if (!id) return;
+          if (!isSanitizedV17 && canonicalProtectedIds.has(id)) {
+            needsSanitizeSave = true;
+            return;
+          }
+          ids.add(id);
+        });
+      }
     } catch (e) {}
+
+    if (!isSanitizedV17) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('boveda_v17_tombstones_sanitized', 'true');
+          if (needsSanitizeSave) {
+            localStorage.setItem('boveda_deleted_doc_ids', JSON.stringify(Array.from(ids)));
+          }
+        }
+      } catch (e) {}
+      if (needsSanitizeSave) {
+        try {
+          await this.setSetting('deletedDocIds', Array.from(ids));
+        } catch (e) {}
+      }
+    }
     return Array.from(ids);
   }
 

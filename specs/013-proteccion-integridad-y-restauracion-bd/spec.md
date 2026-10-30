@@ -41,3 +41,4 @@ Hace ~30 minutos (`11:55 AM` hora local / `14:55:04Z`), al abrir la aplicación 
 - **CA-01:** El servidor Cloud Run y `data/vault_cloud.json` restauran inmediatamente los expedientes reales del usuario y los sirven en `GET /api/v1/documents`.
 - **CA-02:** Tanto en PC como en iPhone, al abrir o recargar la app (`v17`), se sanean los tombstones locales envenenados por `v16` y reaparecen todos los expedientes reales descifrados en sus gavetas.
 - **CA-03:** No se modifica ninguna funcionalidad existente que ya opera correctamente (autenticación, licencias, gavetas personalizadas, creación/edición/borrado manual de documentos).
+

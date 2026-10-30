@@ -27,3 +27,4 @@
 
 6. **`sw.js` e `index.html`:**
    - Actualizar `CACHE_NAME` a `'boveda-digital-v17'` y `?v=17` en `index.html`.
+

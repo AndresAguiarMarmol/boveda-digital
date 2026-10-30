@@ -1,5 +1,5 @@
 // sw.js – en la raíz del proyecto
-const CACHE_NAME = 'boveda-digital-v17';
+const CACHE_NAME = 'boveda-digital-v18';
 const ASSETS = [
     './',
     './index.html',

@@ -202,7 +202,14 @@ const INITIAL_PURGED_DOC_IDS = [
   'doc_lroukh0y9',
   'doc_ovjy4qg6p',
   'doc_shm2e0xo1',
-  'doc_zyd7diy5s'
+  'doc_zyd7diy5s',
+  'doc_q3swr4qvq',
+  'doc_rbwv99380',
+  'doc_wo7uka8zi',
+  'doc_xgcyu22gc',
+  'doc_9v1d87se3',
+  'doc_nsxfmaf07',
+  'doc_rn7x29c0o'
 ];
 
 // Base de datos para el servidor (con persistencia a disco)
@@ -879,6 +886,10 @@ const server = http.createServer(async (req, res) => {
       // 8. POST /api/v1/documents (Subir o sincronizar documento cifrado)
       if (pathname === '/api/v1/documents' && req.method === 'POST') {
         const body = await parseJSONBody(req);
+        // Spec 014: Bloquear registros corruptos "Documento Restaurado" vacíos
+        if (body.title === 'Documento Restaurado' && body.category === 'general') {
+          return sendJSON(res, 200, { ignored: true, reason: 'corrupted_restored_placeholder' });
+        }
         const partition = resolveVaultPartition(authUser);
         const userDocs = db.documents.get(partition) || [];
 
@@ -921,10 +932,10 @@ const server = http.createServer(async (req, res) => {
           d => d && d.id && !(db.deletedIds && db.deletedIds.has(d.id))
         );
 
-        // Spec 013: Fusionar documentos sin permitir jamás borrados masivos desde batch-sync
-        // (las eliminaciones sólo ocurren vía DELETE /api/v1/documents/:id explícito del usuario)
+        // Spec 013 & 014: Fusionar documentos sin permitir jamás borrados masivos ni sobrescrituras con "Documento Restaurado"
         documents.forEach(doc => {
           if (!doc || !doc.id) return;
+          if (doc.title === 'Documento Restaurado' && doc.category === 'general') return;
           if ((db.deletedIds && db.deletedIds.has(doc.id)) || String(doc.id).startsWith('doc_demo_')) {
             return;
           }

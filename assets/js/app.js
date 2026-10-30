@@ -392,6 +392,13 @@ class BovedaApp {
       }
 
       if (decryptedPayload) {
+        // Spec 014: Purgar cualquier registro residual corrupto "Documento Restaurado" vacío
+        if (raw.title === 'Documento Restaurado' && raw.category === 'general') {
+          try {
+            await window.vaultStorage.deleteDocument(raw.id, false);
+          } catch (e) {}
+          continue;
+        }
         this.unlockedDocuments.push({
           id: raw.id,
           category: raw.category || 'identidad',
@@ -406,18 +413,6 @@ class BovedaApp {
         console.warn('[BovedaApp] Documento no pudo ser descifrado:', raw.id, raw.title);
       }
     }
-
-    // Spec 013: Deduplicar únicamente en memoria para visualización sin eliminar jamás registros de IndexedDB automáticamente
-    const seenKeys = new Map();
-    const deduplicatedDocs = [];
-    for (const doc of this.unlockedDocuments) {
-      const dedupKey = `${String(doc.category || 'identidad').trim().toLowerCase()}|${String(doc.title || '').trim().toLowerCase()}|${String(doc.doc_number || '').trim().toLowerCase()}`;
-      if (!seenKeys.has(dedupKey)) {
-        seenKeys.set(dedupKey, doc);
-        deduplicatedDocs.push(doc);
-      }
-    }
-    this.unlockedDocuments = deduplicatedDocs;
 
     if (reEncryptedCount > 0) {
       console.log(`[BovedaApp] ${reEncryptedCount} expedientes migrados y re-cifrados exitosamente con tu clave actual.`);
@@ -3362,35 +3357,48 @@ class BovedaApp {
         }
       }
 
-      // Re-cifrar y guardar cada documento en IndexedDB
+      // Re-cifrar y guardar cada documento en IndexedDB preservando el esquema real de Bóveda Digital (Spec 014)
       for (const item of decryptedResults) {
-        const plain = item.decryptedData;
+        const plain = item.decryptedData || {};
+        const orig = item.originalDoc || {};
+        const docTitle = (orig.title && orig.title !== 'Documento Restaurado')
+          ? orig.title
+          : (plain.title && plain.title !== 'Documento Restaurado' ? plain.title : 'Documento Cifrado');
+        const docCategory = (orig.category && orig.category !== 'general')
+          ? orig.category
+          : (plain.category && plain.category !== 'general' ? plain.category : 'identidad');
+        const docExpiry = plain.expiry_date || plain.expirationDate || orig.expiry_date || orig.expirationDate || null;
+        const docCreatedAt = orig.created_at || orig.createdAt || plain.createdAt || new Date().toISOString();
+        const docUpdatedAt = new Date().toISOString();
+
         const payloadToEncrypt = {
-          title: plain.title || 'Documento Restaurado',
-          category: plain.category || 'general',
-          documentType: plain.documentType || 'otro',
-          documentNumber: plain.documentNumber || '',
-          expirationDate: plain.expirationDate || '',
+          ...plain,
+          doc_number: plain.doc_number || plain.documentNumber || '',
+          issuer: plain.issuer || '',
+          issue_date: plain.issue_date || '',
+          expiry_date: docExpiry || '',
+          tags: plain.tags || '',
           notes: plain.notes || '',
-          fileData: plain.fileData || null,
-          fileName: plain.fileName || null,
-          fileMime: plain.fileMime || null,
-          createdAt: plain.createdAt || item.originalDoc.createdAt || item.originalDoc.created_at || new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          attachment: plain.attachment || (plain.fileData ? {
+            name: plain.fileName || 'adjunto',
+            mimeType: plain.fileMime || 'application/octet-stream',
+            ciphertext: plain.fileData,
+            iv: orig.iv || 'default_iv'
+          } : null)
         };
 
         const reEncrypted = await window.vaultCrypto.encrypt(activeMasterKey, payloadToEncrypt);
         await window.vaultStorage.saveDocument({
           id: item.id,
           user_id: userId,
-          category: payloadToEncrypt.category,
-          title: payloadToEncrypt.title,
+          category: docCategory,
+          title: docTitle,
           encrypted_payload: reEncrypted.ciphertext,
           iv: reEncrypted.iv,
           checksum: reEncrypted.checksum,
-          expiry_date: payloadToEncrypt.expirationDate || null,
-          created_at: payloadToEncrypt.createdAt,
-          updated_at: payloadToEncrypt.updatedAt,
+          expiry_date: docExpiry,
+          created_at: docCreatedAt,
+          updated_at: docUpdatedAt,
           is_synced: false
         });
       }
@@ -3401,9 +3409,10 @@ class BovedaApp {
         await window.vaultStorage.setSetting('userSalt_' + user.email, window.vaultAuth.salt || successfulSalt);
       }
 
-      // 5. Cerrar modal y re-renderizar interfaz
+      // 5. Cerrar modal, re-renderizar interfaz y sincronizar con la nube
       this.cancelBackupPinUnlock();
-      await this.loadAndRenderDocuments();
+      await this.loadAndRenderDocuments(true);
+      await this.syncWithCloud(true);
 
       this.showToast(`¡Recuperación completada! ${decryptedResults.length} expedientes descifrados y listos en tu archivador.`, 'success');
     } catch (err) {

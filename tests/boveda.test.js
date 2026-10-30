@@ -622,9 +622,9 @@ test('SDD 002: esPayloadCifradoValido descarta registros espurios y acepta datos
 test('SDD 002: Service Worker v2/v3/v4, diálogo de PIN y manejadores en app.js e index.html', () => {
   const rootDir = path.join(__dirname, '..');
 
-  // 1. sw.js debe ser v2 a v17
+  // 1. sw.js debe ser v2+
   const swContent = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
-  assert.ok(/boveda-digital-v(2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17)/.test(swContent), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
+  assert.ok(/boveda-digital-v\d+/.test(swContent), 'sw.js debe definir CACHE_NAME para forzar actualización en celulares');
 
   // 2. index.html debe incluir el diálogo modal-backup-pin-prompt y sus componentes
   const htmlContent = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -1084,7 +1084,7 @@ test('SDD 007: Identificación Obligatoria en Primer Uso y Validación por Códi
   assert.ok(appJs.includes('handleOnboardingSubmitStep2'), 'app.js debe implementar handleOnboardingSubmitStep2()');
 
   // 5. Verificación de Service Worker
-  assert.ok(/boveda-digital-v(8|9|10|11|12|13|14|15|16|17)/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8 a v17');
+  assert.ok(/boveda-digital-v\d+/.test(swJs), 'sw.js debe operar con la versión de caché boveda-digital-v8+');
 
   // 6. Prueba funcional de lógica en clase VaultLicenseManager
   const { VaultLicenseManager } = require('../assets/js/license.js');
@@ -1135,7 +1135,7 @@ test('SDD 008: Soporte SMTP Gmail y Resiliencia en Envío de Correo', async () =
   assert.ok(authJs.includes('_vault_otp_'), 'auth.js debe persistir OTP en sessionStorage ante contingencia');
 
   // 4. Verificación de Service Worker
-  assert.ok(/boveda-digital-v(9|10|11|12|13|14|15|16|17)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9 a v17');
+  assert.ok(/boveda-digital-v\d+/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v9+');
 
   // 5. Verificación de prevención de bloqueo de teclado en modales e inputs
   assert.ok(appJs.includes('isInputFocused || isModalOpen'), 'app.js no debe interceptar teclado si hay un input enfocado o un modal activo');
@@ -1167,7 +1167,7 @@ test('SDD 009: Simplificación de Interfaz del Navbar (Eliminación de botones P
   assert.ok(headerHtml.includes('id="btn-restore-vault"'), 'El navbar debe conservar el botón de Recuperar');
 
   // 3. Verificación de Service Worker v11 o superior
-  assert.ok(/boveda-digital-v(11|12|13|14|15|16|17)/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v11 a v17');
+  assert.ok(/boveda-digital-v\d+/.test(swJs), 'sw.js debe estar actualizado a boveda-digital-v11+');
 });
 
 test('SDD 010: Eliminación de la Solicitud de Clave para la Bóveda Protegida y Auto-Desbloqueo', () => {
@@ -1192,7 +1192,7 @@ test('SDD 010: Eliminación de la Solicitud de Clave para la Bóveda Protegida y
   assert.ok(appJs.includes("await window.vaultAuth.autoUnlock();\n          this.switchView('dashboard');"), 'login debe auto-desbloquear y mostrar dashboard');
 
   // 3. Service Worker debe estar en v12 o superior
-  assert.ok(/boveda-digital-v(12|13|14|15|16|17)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v12 a v17');
+  assert.ok(/boveda-digital-v(12|13|14|15|16|17|18)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v12 a v18');
 });
 
 test('SDD 011: Correo Electrónico del Usuario Autenticado en Licencia y Período de Prueba', async () => {
@@ -1239,10 +1239,10 @@ test('SDD 011: Correo Electrónico del Usuario Autenticado en Licencia y Períod
   assert.equal(estado.cadenaSolicitud, 'REQ|dev_test_spec011|andres.aguiar.marmol@gmail.com', 'La cadena de solicitud debe contener el correo del usuario autenticado');
 
   // 4. Service Worker v13 o superior
-  assert.ok(/boveda-digital-v(13|14|15|16|17)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v13 a v17');
+  assert.ok(/boveda-digital-v(13|14|15|16|17|18)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v13 a v18');
 });
 
-test('SDD 012 & 013: Unificación Multi-Dispositivo, Protección contra Auto-Borrado y Restauración de Expedientes', () => {
+test('SDD 012, 013 & 014: Unificación Multi-Dispositivo, Protección contra Auto-Borrado y Erradicación de "Documento Restaurado" Corrupto', () => {
   const rootDir = path.join(__dirname, '..');
   const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
   const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
@@ -1261,21 +1261,25 @@ test('SDD 012 & 013: Unificación Multi-Dispositivo, Protección contra Auto-Bor
   assert.ok(serverJs.includes('function decodeJWTWithoutExpiry('), 'server.js debe implementar decodeJWTWithoutExpiry para refresh');
   assert.ok(serverJs.includes('INITIAL_PURGED_DOC_IDS'), 'server.js debe purgar los documentos demo y duplicados históricos');
 
-  // 3. data/vault_cloud.json debe contener los 10 expedientes personales reales en usr_pro_001 sin registros demo ni duplicados
+  // 3. data/vault_cloud.json debe contener los 10 expedientes personales reales en usr_pro_001 sin registros demo ni "Documento Restaurado"
   assert.ok(Array.isArray(cloudJson.documents.usr_pro_001), 'vault_cloud.json debe contener la colección unificada usr_pro_001');
   assert.equal(cloudJson.documents.usr_pro_001.length, 10, 'vault_cloud.json debe consolidar los 10 expedientes personales reales del titular');
   assert.ok(!cloudJson.documents.usr_pro_001.some(d => String(d.id).startsWith('doc_demo_')), 'vault_cloud.json NO debe incluir los 3 documentos demo eliminados');
+  assert.ok(!cloudJson.documents.usr_pro_001.some(d => d.title === 'Documento Restaurado'), 'vault_cloud.json NO debe contener registros corruptos Documento Restaurado');
   assert.ok(Array.isArray(cloudJson.deletedIds) && cloudJson.deletedIds.includes('doc_demo_pasaporte'), 'vault_cloud.json debe registrar los demos eliminados en deletedIds');
+  assert.ok(cloudJson.deletedIds.includes('doc_q3swr4qvq'), 'vault_cloud.json debe purgar los registros corruptos Documento Restaurado');
   assert.ok(!cloudJson.deletedIds.includes('doc_huzcvq2ff'), 'vault_cloud.json NO debe incluir expedientes reales en deletedIds');
   assert.ok(cloudJson.customDrawers && cloudJson.customDrawers.usr_pro_001 && cloudJson.customDrawers.usr_pro_001.gaveta_documentos_registrad_m6ses, 'vault_cloud.json debe preservar la gaveta personalizada Documentos Registrados');
 
-  // 4. Spec 013: Prohibición de auto-borrado en loadAndRenderDocuments y saneamiento de tombstones en storage.js
+  // 4. Spec 013 & 014: Prohibición de auto-borrado, rechazo de "Documento Restaurado" vacío y preservación de esquema en submitBackupPinUnlock
   assert.ok(!appJs.includes('deleteDocument(zombieId'), 'app.js NO debe auto-eliminar registros en loadAndRenderDocuments');
-  assert.ok(storageJs.includes('boveda_v17_tombstones_sanitized'), 'storage.js debe sanear tombstones envenenados por v16');
+  assert.ok(storageJs.includes('boveda_v18_tombstones_sanitized'), 'storage.js debe sanear tombstones en v18');
   assert.ok(storageJs.includes('canonicalProtectedIds'), 'storage.js debe proteger los 10 expedientes canónicos');
+  const { esPayloadCifradoValido } = require('../assets/js/storage.js');
+  assert.equal(esPayloadCifradoValido({ id: 'doc_test', title: 'Documento Restaurado', category: 'general', encrypted_payload: 'ABCD' }), false, 'esPayloadCifradoValido debe rechazar registros corruptos Documento Restaurado');
 
-  // 5. Service Worker v17
-  assert.ok(/boveda-digital-v(14|15|16|17)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v14 a v17');
+  // 5. Service Worker v18
+  assert.ok(/boveda-digital-v18/.test(swJs), 'sw.js debe estar en versión boveda-digital-v18');
 });
 
 

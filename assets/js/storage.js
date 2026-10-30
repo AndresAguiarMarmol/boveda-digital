@@ -113,10 +113,17 @@ class VaultStorage {
       'doc_lroukh0y9',
       'doc_ovjy4qg6p',
       'doc_shm2e0xo1',
-      'doc_zyd7diy5s'
+      'doc_zyd7diy5s',
+      'doc_q3swr4qvq',
+      'doc_rbwv99380',
+      'doc_wo7uka8zi',
+      'doc_xgcyu22gc',
+      'doc_9v1d87se3',
+      'doc_nsxfmaf07',
+      'doc_rn7x29c0o'
     ]);
     let needsSanitizeSave = false;
-    const isSanitizedV17 = typeof localStorage !== 'undefined' && localStorage.getItem('boveda_v17_tombstones_sanitized') === 'true';
+    const isSanitizedV18 = typeof localStorage !== 'undefined' && localStorage.getItem('boveda_v18_tombstones_sanitized') === 'true';
 
     try {
       if (typeof localStorage !== 'undefined') {
@@ -126,7 +133,7 @@ class VaultStorage {
           if (Array.isArray(parsed)) {
             parsed.forEach(id => {
               if (!id) return;
-              if (!isSanitizedV17 && canonicalProtectedIds.has(id)) {
+              if (!isSanitizedV18 && canonicalProtectedIds.has(id)) {
                 needsSanitizeSave = true;
                 return;
               }
@@ -141,7 +148,7 @@ class VaultStorage {
       if (Array.isArray(saved)) {
         saved.forEach(id => {
           if (!id) return;
-          if (!isSanitizedV17 && canonicalProtectedIds.has(id)) {
+          if (!isSanitizedV18 && canonicalProtectedIds.has(id)) {
             needsSanitizeSave = true;
             return;
           }
@@ -150,10 +157,11 @@ class VaultStorage {
       }
     } catch (e) {}
 
-    if (!isSanitizedV17) {
+    if (!isSanitizedV18) {
       try {
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem('boveda_v17_tombstones_sanitized', 'true');
+          localStorage.setItem('boveda_v18_tombstones_sanitized', 'true');
           if (needsSanitizeSave) {
             localStorage.setItem('boveda_deleted_doc_ids', JSON.stringify(Array.from(ids)));
           }
@@ -271,7 +279,8 @@ class VaultStorage {
       if (!esPayloadCifradoValido(doc)) continue;
       if (deletedSet.has(doc.id)) continue;
       const existing = await this.getDocument(doc.id);
-      if (!existing || new Date(doc.updated_at || 0) >= new Date(existing.updated_at || 0)) {
+      const isExistingCorruptedRestored = existing && existing.title === 'Documento Restaurado';
+      if (!existing || isExistingCorruptedRestored || new Date(doc.updated_at || 0) >= new Date(existing.updated_at || 0)) {
         await this.saveDocument({
           ...doc,
           user_id: doc.user_id || 'usr_pro_001',
@@ -485,6 +494,10 @@ VaultStorage.prototype.esPayloadCifradoValido = esPayloadCifradoValido;
 function esPayloadCifradoValido(doc) {
   if (!doc || typeof doc !== 'object') return false;
   if (!doc.id) return false;
+  // Spec 014: Rechazar registros corruptos vacíos generados por el fallo previo de submitBackupPinUnlock
+  if (doc.title === 'Documento Restaurado' && doc.category === 'general') {
+    return false;
+  }
   const payload = doc.encrypted_payload || doc.encryptedPayload;
   if (!payload || typeof payload !== 'string') return false;
   // Descartar placeholders espurios generados por mocks incompletos de red o tests

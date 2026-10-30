@@ -26,19 +26,19 @@ El usuario tiene **Bóveda Digital** instalada en dos dispositivos (**PC** y **C
 
 ### RF-02: Identidad (`user.sub`), Sal Criptográfica (`crypto_salt`) y Partición de Bóveda Unificadas
 - En `server.js` y `VaultAuth`, la generación de `sub` y `crypto_salt` para cualquier cuenta registrada debe ser determinista por correo electrónico, preservando la sal maestra `'226000658459336d4184642799fc8498'` para descifrado Zero-Knowledge transparente entre PC y Celular.
-- Consolidar en `data/vault_cloud.json` y `server.js` los 13 expedientes legítimos del usuario (depurando los 5 registros de prueba espurios de 21-24 bytes) para que todas las identidades del titular (`andres.aguiar.marmol@gmail.com`, `andres.pro@boveda.com`, `atleta@halterofilia.com`, `su-usuario@dominio.com`) accedan a la misma bóveda compartida.
+- Consolidar en `data/vault_cloud.json` y `server.js` los 10 expedientes personales reales del titular (purgando los 3 documentos demo `doc_demo_*` eliminados por el usuario y los 5 registros duplicados/huérfanos del 18 de octubre) para que todas las identidades del titular (`andres.aguiar.marmol@gmail.com`, `andres.pro@boveda.com`, `atleta@halterofilia.com`, `su-usuario@dominio.com`) accedan a la misma bóveda compartida.
 - Corregir `POST /api/v1/auth/refresh` en `server.js` para extraer el `sub` y `email` reales del token (incluso si expiró su ventana temporal) sin degradar nunca a `'usr_refreshed'`.
 
-### RF-03: Reconciliación Bidireccional en `IndexedDB` y Nube
-- En el cliente (`storage.js` y `app.js`), consolidar todos los documentos locales válidos en `IndexedDB` bajo el `user.sub` activo para rescatar cualquier documento creado previamente en sesiones locales de la PC o del Celular.
-- Al iniciar o desbloquear la bóveda, sincronizar primero con la nube antes de decidir si sembrar documentos demo, evitando duplicar demos cuando el usuario ya tiene documentos reales en la base de datos central.
-- Propagar eliminaciones entre dispositivos (`deleted_ids` / sincronización autoritativa con la nube) y disparar sincronización automática al volver a enfocar la app (`visibilitychange` / `focus` / `online`).
+### RF-03: Reconciliación Bidireccional en `IndexedDB`, Prevención de Regeneración Demo y Deduplicación
+- En el cliente (`storage.js` y `app.js`), consolidar todos los documentos locales válidos en `IndexedDB` bajo el `user.sub` activo y persistir los IDs eliminados (`getDeletedIds` / `addDeletedIds`).
+- Al iniciar o desbloquear la bóveda, sincronizar primero con la nube antes de decidir si sembrar documentos demo, y bloquear permanentemente la regeneración de demos una vez sembrados o eliminados (`boveda_demos_seeded`).
+- Propagar eliminaciones entre dispositivos (`deletedIds` bidireccional y `await DELETE` antes de `syncWithCloud`), deduplicar expedientes por `(category, title, doc_number)` y disparar sincronización automática al volver a enfocar la app (`visibilitychange` / `focus` / `online`).
 
 ---
 
 ## 3. Criterios de Aceptación (CA)
 - **CA-01:** La PC y el Celular apuntan al mismo servidor (`https://boveda-digital-17818053587.us-central1.run.app`) por defecto.
-- **CA-02:** Ambos dispositivos muestran exactamente los mismos expedientes descifrados con la misma clave AES-256-GCM derivada de su PIN y sal unificada.
+- **CA-02:** Ambos dispositivos muestran exactamente los mismos 10 expedientes personales descifrados con la misma clave AES-256-GCM derivada de su PIN y sal unificada, sin regenerar demos ni duplicar registros.
 - **CA-03:** Crear, modificar o eliminar un expediente en un dispositivo se refleja automáticamente en el otro dispositivo al sincronizar o al abrir/enfocar la aplicación.
-- **CA-04:** El Service Worker se actualiza a `boveda-digital-v14` y toda la suite de pruebas (`tests/boveda.test.js` y `tests/server.test.js`) pasa al 100% en verde.
+- **CA-04:** El Service Worker se actualiza a `boveda-digital-v16` y toda la suite de pruebas (`tests/boveda.test.js` y `tests/server.test.js`) pasa al 100% en verde.
 

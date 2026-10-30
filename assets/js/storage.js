@@ -91,6 +91,53 @@ class VaultStorage {
   }
 
   /**
+   * Obtiene la lista persistente de IDs de documentos eliminados (tombstones)
+   * @returns {Promise<Array<string>>}
+   */
+  async getDeletedIds() {
+    const ids = new Set([
+      'doc_bba1vso67',
+      'doc_lroukh0y9',
+      'doc_ovjy4qg6p',
+      'doc_shm2e0xo1',
+      'doc_zyd7diy5s'
+    ]);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('boveda_deleted_doc_ids');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) parsed.forEach(id => id && ids.add(id));
+        }
+      }
+    } catch (e) {}
+    try {
+      const saved = await this.getSetting('deletedDocIds');
+      if (Array.isArray(saved)) saved.forEach(id => id && ids.add(id));
+    } catch (e) {}
+    return Array.from(ids);
+  }
+
+  /**
+   * Registra uno o más IDs de documentos como eliminados permanentemente
+   * @param {Array<string>} newIds
+   */
+  async addDeletedIds(newIds = []) {
+    if (!Array.isArray(newIds) || newIds.length === 0) return;
+    const current = await this.getDeletedIds();
+    const merged = Array.from(new Set([...current, ...newIds.filter(Boolean)]));
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('boveda_deleted_doc_ids', JSON.stringify(merged));
+      }
+    } catch (e) {}
+    try {
+      await this.setSetting('deletedDocIds', merged);
+    } catch (e) {}
+    return merged;
+  }
+
+  /**
    * Obtiene todos los documentos cifrados de un usuario (o todos consolidados en el dispositivo - Spec 012)
    * @param {string} [userId] 
    * @returns {Promise<Array>}
@@ -98,6 +145,7 @@ class VaultStorage {
   async getAllDocuments(userId = null) {
     const db = await this.getDB();
     if (!db) return [];
+    const deletedSet = new Set(await this.getDeletedIds());
     return new Promise((resolve, reject) => {
       const tx = db.transaction('documents', 'readonly');
       const store = tx.objectStore('documents');
@@ -111,7 +159,9 @@ class VaultStorage {
       }
 
       request.onsuccess = () => {
-        const results = (request.result || []).filter(esPayloadCifradoValido);
+        const results = (request.result || []).filter(
+          d => esPayloadCifradoValido(d) && !deletedSet.has(d.id)
+        );
         resolve(results);
       };
       request.onerror = (e) => reject(e.target.error);
@@ -156,15 +206,17 @@ class VaultStorage {
   async mergeCloudDocuments(cloudDocs = [], deletedIds = []) {
     let mergedCount = 0;
     if (Array.isArray(deletedIds) && deletedIds.length > 0) {
-      for (const delId of deletedIds) {
-        if (delId) {
-          try {
-            await this.deleteDocument(delId);
-          } catch (e) {}
-        }
+      await this.addDeletedIds(deletedIds);
+    }
+    const allDeleted = await this.getDeletedIds();
+    const deletedSet = new Set(allDeleted);
+    for (const delId of deletedSet) {
+      if (delId) {
+        try {
+          await this.deleteDocument(delId, false);
+        } catch (e) {}
       }
     }
-    const deletedSet = new Set(Array.isArray(deletedIds) ? deletedIds : []);
     for (const doc of cloudDocs) {
       if (!esPayloadCifradoValido(doc)) continue;
       if (deletedSet.has(doc.id)) continue;
@@ -182,11 +234,16 @@ class VaultStorage {
   }
 
   /**
-   * Elimina un documento por ID
+   * Elimina un documento por ID y registra su tombstone
    * @param {string} id 
+   * @param {boolean} [recordTombstone=true]
    */
-  async deleteDocument(id) {
+  async deleteDocument(id, recordTombstone = true) {
+    if (recordTombstone && id) {
+      await this.addDeletedIds([id]);
+    }
     const db = await this.getDB();
+    if (!db) return true;
     return new Promise((resolve, reject) => {
       const tx = db.transaction('documents', 'readwrite');
       const store = tx.objectStore('documents');

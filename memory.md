@@ -117,11 +117,24 @@ Compatible con el backend centralizado de la app de Halterofilia:
   - *Partición Canónica Unificada (`usr_pro_001`) y Sal Maestra Compartida (`MASTER_CRYPTO_SALT`):* En `server.js`, `resolveVaultPartition(authUser)` enruta todas las cuentas del propietario y cuentas de dispositivo (`andres.aguiar.marmol@gmail.com`, `andres.pro@boveda.com`, `demo.free@boveda.com`, `atleta@halterofilia.com`, `su-usuario@dominio.com`) hacia la misma partición de bóveda `usr_pro_001` y sal maestra `'226000658459336d4184642799fc8498'`. En `POST /api/v1/auth/refresh`, `decodeJWTWithoutExpiry()` preserva el `sub` y `email` originales del token en vez de degradar a `'usr_refreshed'`.
   - *Sincronización de Gavetas Personalizadas (`customDrawers`), Borrados (`deletedIds`) y Consolidación Local:* `GET /api/v1/documents` y `POST /api/v1/documents/batch-sync` sincronizan tanto los documentos como `customDrawers` (incluyendo `gaveta_documentos_registrad_m6ses` — `"Documentos Registrados"`) y `deletedIds`. En el cliente, `VaultStorage.getAllDocuments()` consolida todos los expedientes válidos de `IndexedDB` sin quedar huérfanos por cambios previos de `user_id`, y `loadAndRenderDocuments()` sincroniza con la nube antes de sembrar demos y reconstruye automáticamente gavetas personalizadas presentes en los documentos.
   - *Sincronización Reactiva Automática:* La app sincroniza con Cloud Run al iniciar, al crear/editar/borrar documentos o gavetas, y reactivamente en los eventos `online`, `window.focus` y `document.visibilitychange`.
-  - Service Worker actualizado a `boveda-digital-v15` con `cache: 'no-store'`, query string `?v=15` en `index.html` y adaptación dinámica de `user_id` en `GET /api/v1/documents` para clientes móviles iOS/iPhone.
+  - Service Worker actualizado a `boveda-digital-v16` con `cache: 'no-store'`, query string `?v=16` en `index.html`, persistencia local y remota de tombstones (`deletedDocIds`), bloqueo definitivo de re-sembrado de demos (`boveda_demos_seeded`) y deduplicación automática de expedientes.
 
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-30 — Corrección de Regeneración de Registros de Prueba Eliminados y Deduplicación de Expedientes (v16)
+- **Erradicación de Regeneración de Documentos Demo (`assets/js/app.js`, `assets/js/storage.js`, `server.js`, `data/vault_cloud.json`):**
+  - Eliminados permanentemente los 3 expedientes de prueba (`doc_demo_pasaporte`, `doc_demo_licencia`, `doc_demo_tarjeta`) y los 5 registros duplicados/huérfanos del 18 de octubre (`doc_bba1vso67`, `doc_lroukh0y9`, `doc_ovjy4qg6p`, `doc_shm2e0xo1`, `doc_zyd7diy5s`) de `data/vault_cloud.json`, conservando exclusivamente los **10 expedientes personales reales** en `documents.usr_pro_001` y pre-registrando esos 8 IDs en `deletedIds` (`INITIAL_PURGED_DOC_IDS` en `server.js`).
+  - En `BovedaApp.loadAndRenderDocuments()` y `_seedInitialDemoDocuments()` (`assets/js/app.js`): añadido el flag persistente `boveda_demos_seeded` (`localStorage` + `IndexedDB`) y verificación contra `getDeletedIds()` para que los documentos demo jamás vuelvan a generarse tras ser eliminados.
+  - En `BovedaApp.handleDeleteSelectedDocument()`: corregida la condición de carrera esperando (`await`) la petición `DELETE /api/v1/documents/:id` (con soporte de auto-renovación en caso de `401`) antes de invocar `syncWithCloud(true)`.
+- **Prevención y Limpieza de Registros Duplicados (`assets/js/storage.js`, `assets/js/app.js`, `server.js`):**
+  - En `VaultStorage` (`assets/js/storage.js`): implementados `getDeletedIds()` y `addDeletedIds()` con persistencia dual (`localStorage` + `IndexedDB`), filtrado automático en `getAllDocuments()` y purga en `mergeCloudDocuments()`.
+  - En `BovedaApp.loadAndRenderDocuments()` y `syncWithCloud()` (`assets/js/app.js`): limpieza automática de registros huérfanos indescifrables en `IndexedDB`, deduplicación por `(category, title, doc_number)`, exclusión de demos y eliminados al subir a la nube y envío de `deletedIds` en `POST /api/v1/documents/batch-sync`.
+  - En `BovedaApp.handleSaveNewDocument()`: añadido candado anti-doble envío (`_isSavingNewDoc`) y reutilización de ID si coincide `(category, title, doc_number)`.
+  - En `server.js` (`POST /api/v1/documents/batch-sync`): deduplicación en servidor por `(category, title)` y bloqueo de subida de `doc_demo_*`.
+- **Service Worker v16 (`sw.js`, `index.html`, `tests/boveda.test.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v16'` y `?v=16` en `index.html`. **65/65 pruebas pasando al 100% en verde**.
 
 ### 2026-10-29 — Spec 012: Unificación de Base de Datos Multi-Dispositivo (PC ↔ Celular / iPhone) y Sincronización Centralizada
 - **Consolidación de Datos Reales en `data/vault_cloud.json`:**

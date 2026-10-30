@@ -194,6 +194,16 @@ function hashPassword(pwd) {
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = process.env.DATA_FILE || path.join(DATA_DIR, 'vault_cloud.json');
 const MASTER_CRYPTO_SALT = '226000658459336d4184642799fc8498';
+const INITIAL_PURGED_DOC_IDS = [
+  'doc_demo_pasaporte',
+  'doc_demo_licencia',
+  'doc_demo_tarjeta',
+  'doc_bba1vso67',
+  'doc_lroukh0y9',
+  'doc_ovjy4qg6p',
+  'doc_shm2e0xo1',
+  'doc_zyd7diy5s'
+];
 
 // Base de datos para el servidor (con persistencia a disco)
 const db = {
@@ -241,7 +251,7 @@ const db = {
   ],
   documents: new Map(),     // key: vault_partition_id, value: Array de docs cifrados
   customDrawers: new Map(), // key: vault_partition_id, value: Objeto de gavetas personalizadas
-  deletedIds: new Set(),    // IDs de documentos eliminados para propagar entre dispositivos
+  deletedIds: new Set(INITIAL_PURGED_DOC_IDS), // IDs de documentos eliminados para propagar entre dispositivos
   shares: new Map()         // key: token, value: payload efímero
 };
 
@@ -314,7 +324,14 @@ function loadDB() {
         ]);
       }
       if (Array.isArray(parsed.deletedIds)) {
-        db.deletedIds = new Set(parsed.deletedIds);
+        db.deletedIds = new Set([...INITIAL_PURGED_DOC_IDS, ...parsed.deletedIds]);
+      } else {
+        db.deletedIds = new Set(INITIAL_PURGED_DOC_IDS);
+      }
+      for (const [partKey, docsArr] of db.documents.entries()) {
+        if (Array.isArray(docsArr)) {
+          db.documents.set(partKey, docsArr.filter(d => d && d.id && !db.deletedIds.has(d.id)));
+        }
       }
       if (parsed.shares) {
         db.shares = new Map(Object.entries(parsed.shares));
@@ -897,30 +914,49 @@ const server = http.createServer(async (req, res) => {
       // 9. POST /api/v1/documents/batch-sync (Sincronización en lote Zero-Knowledge)
       if (pathname === '/api/v1/documents/batch-sync' && req.method === 'POST') {
         const body = await parseJSONBody(req);
-        const { documents = [], customDrawers = null } = body;
+        const { documents = [], customDrawers = null, deletedIds = [] } = body;
         const partition = resolveVaultPartition(authUser);
 
-        let userDocs = db.documents.get(partition) || [];
-        // Fusionar documentos respetando eliminaciones previas salvo que sea una actualización más reciente
+        if (Array.isArray(deletedIds) && db.deletedIds) {
+          for (const delId of deletedIds) {
+            if (delId && typeof delId === 'string') {
+              db.deletedIds.add(delId);
+            }
+          }
+        }
+
+        let userDocs = (db.documents.get(partition) || []).filter(
+          d => d && d.id && !(db.deletedIds && db.deletedIds.has(d.id))
+        );
+
+        // Fusionar documentos respetando eliminaciones previas y evitando duplicados por (category, title)
         documents.forEach(doc => {
           if (!doc || !doc.id) return;
-          // No re-insertar documentos que ya fueron eliminados explícitamente en otro dispositivo
-          if (db.deletedIds && db.deletedIds.has(doc.id)) {
+          // No re-insertar documentos que ya fueron eliminados explícitamente o que sean demos auto-sembrados
+          if ((db.deletedIds && db.deletedIds.has(doc.id)) || String(doc.id).startsWith('doc_demo_')) {
             return;
           }
           const idx = userDocs.findIndex(d => d.id === doc.id);
           if (idx >= 0) {
-            // Evitar que documentos demo auto-sembrados en un dispositivo nuevo sobrescriban los ya normalizados en nube
-            if (String(doc.id).startsWith('doc_demo_')) {
-              return;
-            }
             const incomingTime = new Date(doc.updated_at || 0).getTime();
             const existingTime = new Date(userDocs[idx].updated_at || 0).getTime();
             if (incomingTime >= existingTime) {
               userDocs[idx] = { ...userDocs[idx], ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() };
             }
           } else {
-            userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
+            const normCat = String(doc.category || 'identidad').trim().toLowerCase();
+            const normTitle = String(doc.title || '').trim().toLowerCase();
+            const dupIdx = normTitle ? userDocs.findIndex(d =>
+              String(d.category || 'identidad').trim().toLowerCase() === normCat &&
+              String(d.title || '').trim().toLowerCase() === normTitle
+            ) : -1;
+
+            if (dupIdx >= 0) {
+              // Evitar duplicación: conservar el registro canónico y registrar el ID duplicado como eliminado
+              if (db.deletedIds) db.deletedIds.add(doc.id);
+            } else {
+              userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
+            }
           }
         });
 
@@ -935,6 +971,7 @@ const server = http.createServer(async (req, res) => {
         return sendJSON(res, 200, {
           syncedCount: documents.length,
           totalCloudDocs: userDocs.length,
+          deletedIds: Array.from(db.deletedIds || []),
           status: 'synced'
         });
       }
@@ -943,15 +980,16 @@ const server = http.createServer(async (req, res) => {
       if (pathname.startsWith('/api/v1/documents/') && req.method === 'DELETE') {
         const docId = pathname.replace('/api/v1/documents/', '').trim();
         const partition = resolveVaultPartition(authUser);
+        if (db.deletedIds && docId) db.deletedIds.add(docId);
         let userDocs = db.documents.get(partition) || [];
         const initialLen = userDocs.length;
         userDocs = userDocs.filter(d => d.id !== docId);
 
         if (userDocs.length === initialLen) {
+          saveDB();
           return sendJSON(res, 404, { error: 'Documento no encontrado o no pertenece al usuario' });
         }
 
-        if (db.deletedIds) db.deletedIds.add(docId);
         db.documents.set(partition, userDocs);
         saveDB();
         return sendJSON(res, 200, { success: true, id: docId, message: 'Documento eliminado de la nube exitosamente' });

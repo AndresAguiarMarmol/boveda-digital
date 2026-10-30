@@ -300,12 +300,18 @@ class BovedaApp {
     }
 
     // Si tras consultar la nube la bóveda sigue vacía, pre-sembrar expedientes de muestra
-    if (rawDocs.length === 0) {
+    // únicamente si nunca se han sembrado ni eliminado previamente en el dispositivo
+    const demosAlreadySeeded = (typeof localStorage !== 'undefined' && localStorage.getItem('boveda_demos_seeded') === 'true') ||
+                               (await window.vaultStorage.getSetting('boveda_demos_seeded')) === true;
+    const deletedIdsList = typeof window.vaultStorage.getDeletedIds === 'function' ? await window.vaultStorage.getDeletedIds() : [];
+    const anyDemoDeleted = deletedIdsList.some(id => String(id).startsWith('doc_demo_'));
+    if (rawDocs.length === 0 && !demosAlreadySeeded && !anyDemoDeleted) {
       await this._seedInitialDemoDocuments(user.sub);
       rawDocs = await window.vaultStorage.getAllDocuments(user.sub);
     }
 
     this.unlockedDocuments = [];
+    const undecryptableIds = [];
     let failedCount = 0;
     let reEncryptedCount = 0;
 
@@ -398,9 +404,36 @@ class BovedaApp {
         });
       } else {
         failedCount++;
+        undecryptableIds.push(raw.id);
         console.warn('[BovedaApp] Documento no pudo ser descifrado:', raw.id, raw.title);
       }
     }
+
+    // Si la clave maestra descifró expedientes válidos, limpiar de IndexedDB registros huérfanos/indescifrables
+    // para que nunca vuelvan a subirse a la nube ni causen duplicados
+    if (this.unlockedDocuments.length > 0 && undecryptableIds.length > 0) {
+      for (const zombieId of undecryptableIds) {
+        try {
+          await window.vaultStorage.deleteDocument(zombieId, true);
+        } catch (e) {}
+      }
+    }
+
+    // Deduplicar expedientes en memoria e IndexedDB por (category, title normalizado, doc_number normalizado)
+    const seenKeys = new Map();
+    const deduplicatedDocs = [];
+    for (const doc of this.unlockedDocuments) {
+      const dedupKey = `${String(doc.category || 'identidad').trim().toLowerCase()}|${String(doc.title || '').trim().toLowerCase()}|${String(doc.doc_number || '').trim().toLowerCase()}`;
+      if (!seenKeys.has(dedupKey)) {
+        seenKeys.set(dedupKey, doc);
+        deduplicatedDocs.push(doc);
+      } else {
+        try {
+          await window.vaultStorage.deleteDocument(doc.id, true);
+        } catch (e) {}
+      }
+    }
+    this.unlockedDocuments = deduplicatedDocs;
 
     if (reEncryptedCount > 0) {
       console.log(`[BovedaApp] ${reEncryptedCount} expedientes migrados y re-cifrados exitosamente con tu clave actual.`);
@@ -1310,69 +1343,81 @@ class BovedaApp {
   }
 
   /**
-   * Guarda un nuevo documento cifrado
+   * Guarda un nuevo documento cifrado (con protección anti-duplicado y bloqueo de doble envío)
    */
   async handleSaveNewDocument(formData) {
     if (!window.vaultAuth.masterKey) {
       this.showToast('La clave maestra no está activa. Desbloquea la bóveda.', 'danger');
       return;
     }
+    if (this._isSavingNewDoc) return;
+    this._isSavingNewDoc = true;
 
-    const title = formData.get('title');
-    const category = formData.get('category');
-    const docNumber = formData.get('doc_number');
-    const issuer = formData.get('issuer');
-    const issueDate = formData.get('issue_date');
-    const expiryDate = formData.get('expiry_date');
-    const tags = formData.get('tags');
-    const notes = formData.get('notes');
-    const fileAttachment = formData.get('attachment_file');
+    try {
+      const title = (formData.get('title') || '').trim();
+      const category = formData.get('category') || 'identidad';
+      const docNumber = (formData.get('doc_number') || '').trim();
+      const issuer = formData.get('issuer');
+      const issueDate = formData.get('issue_date');
+      const expiryDate = formData.get('expiry_date');
+      const tags = formData.get('tags');
+      const notes = formData.get('notes');
+      const fileAttachment = formData.get('attachment_file');
 
-    const docId = 'doc_' + Math.random().toString(36).substr(2, 9);
+      // Reutilizar ID existente si ya hay un expediente con idéntica categoría, título y número (evita duplicados)
+      const existingMatch = (this.unlockedDocuments || []).find(d =>
+        String(d.category || 'identidad').trim().toLowerCase() === String(category).trim().toLowerCase() &&
+        String(d.title || '').trim().toLowerCase() === title.toLowerCase() &&
+        String(d.doc_number || '').trim().toLowerCase() === docNumber.toLowerCase()
+      );
+      const docId = existingMatch ? existingMatch.id : ('doc_' + Math.random().toString(36).substr(2, 9));
 
-    let attachmentCipher = null;
-    if (fileAttachment && fileAttachment.size > 0) {
-      attachmentCipher = await window.vaultCrypto.encryptFile(window.vaultAuth.masterKey, fileAttachment);
+      let attachmentCipher = existingMatch ? (existingMatch.attachment || null) : null;
+      if (fileAttachment && fileAttachment.size > 0) {
+        attachmentCipher = await window.vaultCrypto.encryptFile(window.vaultAuth.masterKey, fileAttachment);
+      }
+
+      const payloadToEncrypt = {
+        doc_number: docNumber,
+        issuer: issuer,
+        issue_date: issueDate,
+        expiry_date: expiryDate,
+        tags: tags,
+        notes: notes,
+        attachment: attachmentCipher
+      };
+
+      // Cifrar metadatos y payload con AES-256-GCM
+      const encryptedResult = await window.vaultCrypto.encrypt(window.vaultAuth.masterKey, payloadToEncrypt);
+
+      const docRecord = {
+        id: docId,
+        user_id: window.vaultAuth.currentUser.sub,
+        category: category,
+        title: title,
+        encrypted_payload: encryptedResult.ciphertext,
+        iv: encryptedResult.iv,
+        checksum: encryptedResult.checksum,
+        expiry_date: expiryDate || null,
+        is_synced: false,
+        created_at: existingMatch ? existingMatch.created_at : new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      await window.vaultStorage.saveDocument(docRecord);
+      await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_CREATED', { docId, category });
+
+      // Asegurar que la gaveta correspondiente se abra para ver el nuevo expediente
+      this.openDrawers.add(category);
+
+      this.showToast('Documento cifrado y archivado en la gaveta con éxito', 'success');
+      document.getElementById('modal-new-doc').close();
+      await this.loadAndRenderDocuments(true);
+      await this.syncWithCloud(true);
+      window.vaultGoogleDrive?.triggerAutoSync(window.vaultAuth.currentUser.sub, 'doc_created');
+    } finally {
+      this._isSavingNewDoc = false;
     }
-
-    const payloadToEncrypt = {
-      doc_number: docNumber,
-      issuer: issuer,
-      issue_date: issueDate,
-      expiry_date: expiryDate,
-      tags: tags,
-      notes: notes,
-      attachment: attachmentCipher
-    };
-
-    // Cifrar metadatos y payload con AES-256-GCM
-    const encryptedResult = await window.vaultCrypto.encrypt(window.vaultAuth.masterKey, payloadToEncrypt);
-
-    const docRecord = {
-      id: docId,
-      user_id: window.vaultAuth.currentUser.sub,
-      category: category,
-      title: title,
-      encrypted_payload: encryptedResult.ciphertext,
-      iv: encryptedResult.iv,
-      checksum: encryptedResult.checksum,
-      expiry_date: expiryDate || null,
-      is_synced: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    await window.vaultStorage.saveDocument(docRecord);
-    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_CREATED', { docId, category });
-
-    // Asegurar que la gaveta correspondiente se abra para ver el nuevo expediente
-    this.openDrawers.add(category);
-
-    this.showToast('Documento cifrado y archivado en la gaveta con éxito', 'success');
-    document.getElementById('modal-new-doc').close();
-    await this.loadAndRenderDocuments(true);
-    this.syncWithCloud(true);
-    window.vaultGoogleDrive?.triggerAutoSync(window.vaultAuth.currentUser.sub, 'doc_created');
   }
 
   /**
@@ -1787,7 +1832,16 @@ class BovedaApp {
         }
       ];
 
+      const deletedSet = new Set(
+        typeof window.vaultStorage.getDeletedIds === 'function' ? await window.vaultStorage.getDeletedIds() : []
+      );
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem('boveda_demos_seeded', 'true');
+      } catch (e) {}
+      await window.vaultStorage.setSetting('boveda_demos_seeded', true);
+
       for (const item of demoItems) {
+        if (deletedSet.has(item.id)) continue;
         const svgBlob = new Blob([item.svg], { type: 'image/svg+xml' });
         svgBlob.name = item.fileName;
 
@@ -1973,21 +2027,40 @@ class BovedaApp {
     if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente el documento "${this.selectedDoc.title}" de tu bóveda? Esta acción no se puede deshacer.`)) return;
 
     const docId = this.selectedDoc.id;
-    await window.vaultStorage.deleteDocument(docId);
-    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_DELETED', { docId });
-
-    // Eliminar también en la nube si hay sesión activa
-    if (window.vaultAuth.accessToken) {
-      fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${docId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
-      }).catch(() => { });
+    if (String(docId).startsWith('doc_demo_')) {
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem('boveda_demos_seeded', 'true');
+      } catch (e) {}
+      await window.vaultStorage.setSetting('boveda_demos_seeded', true);
     }
+
+    await window.vaultStorage.deleteDocument(docId, true);
+    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_DELETED', { docId });
 
     document.getElementById('modal-doc-detail').close();
     this.showToast('Documento eliminado de la gaveta.', 'success');
     await this.loadAndRenderDocuments(true);
-    this.syncWithCloud(true);
+
+    // Eliminar también en la nube esperando confirmación antes de sincronizar (evita resurrección por condición de carrera)
+    if (window.vaultAuth.accessToken) {
+      try {
+        let delRes = await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${docId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
+        }).catch(() => null);
+        if (delRes && delRes.status === 401) {
+          const refreshed = await window.vaultAuth.refreshSession();
+          if (refreshed) {
+            await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${docId}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
+            }).catch(() => null);
+          }
+        }
+      } catch (e) {}
+    }
+
+    await this.syncWithCloud(true);
     window.vaultGoogleDrive?.triggerAutoSync(window.vaultAuth.currentUser.sub, 'doc_deleted');
   }
 
@@ -2778,11 +2851,23 @@ class BovedaApp {
         }
       }
 
-      // 1. Obtener todos los documentos y gavetas locales de IndexedDB
-      const localDocs = await window.vaultStorage.getAllDocuments(user.sub);
+      // 1. Obtener todos los documentos, tombstones de eliminación y gavetas locales de IndexedDB
+      const rawLocalDocs = await window.vaultStorage.getAllDocuments(user.sub);
+      const deletedIds = typeof window.vaultStorage.getDeletedIds === 'function' ? await window.vaultStorage.getDeletedIds() : [];
+      const deletedSet = new Set(deletedIds);
+      const unlockedIdSet = (this.unlockedDocuments && this.unlockedDocuments.length > 0)
+        ? new Set(this.unlockedDocuments.map(d => d.id))
+        : null;
+      // Filtrar para no subir jamás registros eliminados, demos locales ni registros indescifrables
+      const localDocs = rawLocalDocs.filter(d =>
+        d && d.id &&
+        !deletedSet.has(d.id) &&
+        !String(d.id).startsWith('doc_demo_') &&
+        (!unlockedIdSet || unlockedIdSet.has(d.id))
+      );
       const localCustomDrawers = (await window.vaultStorage.getSetting('customDrawers_' + user.sub)) || {};
 
-      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados y estructura de gavetas)
+      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados, tombstones y estructura de gavetas)
       if (token) {
         const controllerSync = new AbortController();
         const timeoutSync = setTimeout(() => controllerSync.abort(), 12000);
@@ -2793,7 +2878,7 @@ class BovedaApp {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers }),
+          body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers, deletedIds }),
           signal: controllerSync.signal
         }).catch(err => {
           console.warn('[BovedaApp] Petición batch-sync diferida:', err.message);
@@ -2812,7 +2897,7 @@ class BovedaApp {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
               },
-              body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers })
+              body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers, deletedIds })
             }).catch(() => null);
           }
         }
@@ -2857,6 +2942,12 @@ class BovedaApp {
             await window.vaultStorage.setSetting('customDrawers_' + user.sub, mergedDrawers);
             this.categories = { ...this.defaultCategories, ...mergedDrawers };
             this.updateCategoryDropdowns();
+          }
+          if (Array.isArray(cloudData.deletedIds) && cloudData.deletedIds.some(id => String(id).startsWith('doc_demo_'))) {
+            try {
+              if (typeof localStorage !== 'undefined') localStorage.setItem('boveda_demos_seeded', 'true');
+            } catch (e) {}
+            await window.vaultStorage.setSetting('boveda_demos_seeded', true);
           }
           if (Array.isArray(cloudData.documents)) {
             await window.vaultStorage.mergeCloudDocuments(cloudData.documents, cloudData.deletedIds || []);

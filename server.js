@@ -947,7 +947,16 @@ const server = http.createServer(async (req, res) => {
               userDocs[idx] = { ...userDocs[idx], ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() };
             }
           } else {
-            userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
+            // Spec 015: Evitar que un dispositivo inserte un segundo registro con distinto ID para el mismo (category, title)
+            const incCat = String(doc.category || 'identidad').trim().toLowerCase();
+            const incTitle = String(doc.title || '').trim().toLowerCase();
+            const dupIdx = userDocs.findIndex(
+              d => String(d.category || 'identidad').trim().toLowerCase() === incCat &&
+                   String(d.title || '').trim().toLowerCase() === incTitle
+            );
+            if (dupIdx < 0) {
+              userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
+            }
           }
         });
 

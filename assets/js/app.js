@@ -310,7 +310,8 @@ class BovedaApp {
       rawDocs = await window.vaultStorage.getAllDocuments(user.sub);
     }
 
-    this.unlockedDocuments = [];
+    const renderSeq = (this._loadRenderSeq = (this._loadRenderSeq || 0) + 1);
+    const unlockedList = [];
     let failedCount = 0;
     let reEncryptedCount = 0;
 
@@ -399,7 +400,7 @@ class BovedaApp {
           } catch (e) {}
           continue;
         }
-        this.unlockedDocuments.push({
+        unlockedList.push({
           id: raw.id,
           category: raw.category || 'identidad',
           title: raw.title,
@@ -413,6 +414,50 @@ class BovedaApp {
         console.warn('[BovedaApp] Documento no pudo ser descifrado:', raw.id, raw.title);
       }
     }
+
+    // Spec 015: Deduplicación atómica por ID y por (category, title, doc_number) + limpieza de copias redundantes en IndexedDB
+    const canonicalIds = new Set([
+      'doc_huzcvq2ff',
+      'doc_ekd0onmfw',
+      'doc_ps25oua80',
+      'doc_9lskrlugo',
+      'doc_yjdulku41',
+      'doc_kzs5fj88v',
+      'doc_rehd8z4vp',
+      'doc_teu75glli',
+      'doc_vqp0qhkbm',
+      'doc_a7fmu6aij',
+      'doc_y56couzw3'
+    ]);
+    const seenIds = new Set();
+    const seenByKey = new Map();
+    for (const doc of unlockedList) {
+      if (!doc || !doc.id || seenIds.has(doc.id)) continue;
+      seenIds.add(doc.id);
+      const dedupKey = `${String(doc.category || 'identidad').trim().toLowerCase()}|${String(doc.title || '').trim().toLowerCase()}|${String(doc.doc_number || '').trim().toLowerCase()}`;
+      if (!seenByKey.has(dedupKey)) {
+        seenByKey.set(dedupKey, doc);
+      } else {
+        const prev = seenByKey.get(dedupKey);
+        const keepNew = canonicalIds.has(doc.id) && !canonicalIds.has(prev.id);
+        const redundantDoc = keepNew ? prev : doc;
+        if (keepNew) {
+          seenByKey.set(dedupKey, doc);
+        }
+        if (!canonicalIds.has(redundantDoc.id)) {
+          try {
+            await window.vaultStorage.deleteDocument(redundantDoc.id, false);
+          } catch (e) {}
+        }
+      }
+    }
+
+    // Si una invocación más reciente de loadAndRenderDocuments se inició mientras esperábamos, descartar esta ejecución obsoleta
+    if (this._loadRenderSeq !== renderSeq) {
+      return;
+    }
+
+    this.unlockedDocuments = Array.from(seenByKey.values());
 
     if (reEncryptedCount > 0) {
       console.log(`[BovedaApp] ${reEncryptedCount} expedientes migrados y re-cifrados exitosamente con tu clave actual.`);
@@ -2806,22 +2851,24 @@ class BovedaApp {
   async syncWithCloud(silent = false) {
     const user = window.vaultAuth.currentUser;
     if (!user) return;
-
-    this.updateCloudSyncUI('syncing', 'Sincronizando...');
-
-    const isLive = await window.vaultAuth.checkServerConnection();
-    if (!isLive) {
-      this.updateCloudSyncUI('offline', 'Modo Local / Offline');
-      if (!silent) {
-        this.showToast('Servidor no disponible. Los datos continúan protegidos localmente en tu dispositivo.', 'info');
-      }
-      return;
-    }
-
-    let token = window.vaultAuth.accessToken;
-    const apiBase = window.vaultAuth.apiBaseUrl;
+    if (this._isSyncingWithCloud) return;
+    this._isSyncingWithCloud = true;
 
     try {
+      this.updateCloudSyncUI('syncing', 'Sincronizando...');
+
+      const isLive = await window.vaultAuth.checkServerConnection();
+      if (!isLive) {
+        this.updateCloudSyncUI('offline', 'Modo Local / Offline');
+        if (!silent) {
+          this.showToast('Servidor no disponible. Los datos continúan protegidos localmente en tu dispositivo.', 'info');
+        }
+        return;
+      }
+
+      let token = window.vaultAuth.accessToken;
+      const apiBase = window.vaultAuth.apiBaseUrl;
+
       // Si el token es un mock local o está ausente, intentar adquirir token JWT genuino del servidor
       if (!token || token.includes('mock_signature')) {
         const refreshed = await window.vaultAuth.refreshSession();
@@ -2834,17 +2881,20 @@ class BovedaApp {
       const rawLocalDocs = await window.vaultStorage.getAllDocuments(user.sub);
       const deletedIds = typeof window.vaultStorage.getDeletedIds === 'function' ? await window.vaultStorage.getDeletedIds() : [];
       const deletedSet = new Set(deletedIds);
-      const localDocs = rawLocalDocs.filter(d =>
-        d && d.id &&
-        !deletedSet.has(d.id) &&
-        !String(d.id).startsWith('doc_demo_')
-      );
+      const seenSyncKeys = new Set();
+      const localDocs = rawLocalDocs.filter(d => {
+        if (!d || !d.id || deletedSet.has(d.id) || String(d.id).startsWith('doc_demo_')) return false;
+        const k = `${String(d.category || 'identidad').trim().toLowerCase()}|${String(d.title || '').trim().toLowerCase()}`;
+        if (seenSyncKeys.has(k)) return false;
+        seenSyncKeys.add(k);
+        return true;
+      });
       const localCustomDrawers = (await window.vaultStorage.getSetting('customDrawers_' + user.sub)) || {};
 
       // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados y estructura de gavetas)
       if (token) {
         const controllerSync = new AbortController();
-        const timeoutSync = setTimeout(() => controllerSync.abort(), 12000);
+        const timeoutSync = setTimeout(() => controllerSync.abort(), 30000);
 
         let syncRes = await fetch(`${apiBase}/api/v1/documents/batch-sync`, {
           method: 'POST',
@@ -2948,6 +2998,8 @@ class BovedaApp {
       if (!silent) {
         this.showToast('Conexión con la Nube interrumpida. Los datos continúan protegidos localmente.', 'info');
       }
+    } finally {
+      this._isSyncingWithCloud = false;
     }
   }
 

@@ -106,7 +106,8 @@ class VaultStorage {
       'doc_rehd8z4vp',
       'doc_teu75glli',
       'doc_vqp0qhkbm',
-      'doc_ymzsioywq'
+      'doc_a7fmu6aij',
+      'doc_y56couzw3'
     ]);
     const ids = new Set([
       'doc_bba1vso67',
@@ -275,6 +276,7 @@ class VaultStorage {
         } catch (e) {}
       }
     }
+    const existingAll = await this.getAllDocuments();
     for (const doc of cloudDocs) {
       if (!esPayloadCifradoValido(doc)) continue;
       if (deletedSet.has(doc.id)) continue;
@@ -287,6 +289,20 @@ class VaultStorage {
           is_synced: true
         });
         mergedCount++;
+      }
+      // Spec 015: Eliminar de IndexedDB cualquier copia local redundante con distinto ID pero mismo (category, title) que el documento de la nube
+      const cloudCat = String(doc.category || 'identidad').trim().toLowerCase();
+      const cloudTitle = String(doc.title || '').trim().toLowerCase();
+      for (const localDoc of existingAll) {
+        if (localDoc && localDoc.id && localDoc.id !== doc.id) {
+          const localCat = String(localDoc.category || 'identidad').trim().toLowerCase();
+          const localTitle = String(localDoc.title || '').trim().toLowerCase();
+          if (localCat === cloudCat && localTitle === cloudTitle) {
+            try {
+              await this.deleteDocument(localDoc.id, false);
+            } catch (e) {}
+          }
+        }
       }
     }
     return mergedCount;

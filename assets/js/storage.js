@@ -92,7 +92,7 @@ class VaultStorage {
 
   /**
    * Obtiene la lista persistente de IDs de documentos eliminados (tombstones)
-   * e incluye saneamiento automático (Spec 013) para restaurar expedientes reales afectados en v16
+   * e incluye saneamiento automático (Spec 013 & Spec 018) para restaurar expedientes reales
    * @returns {Promise<Array<string>>}
    */
   async getDeletedIds() {
@@ -137,7 +137,23 @@ class VaultStorage {
       }
     } catch (e) {}
 
-    return Array.from(ids);
+    // Spec 018: Excluir IDs que han sido explícitamente restaurados / des-tombstoneados
+    const unDeleted = new Set();
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const rawUn = localStorage.getItem('boveda_undeleted_doc_ids');
+        if (rawUn) {
+          const parsedUn = JSON.parse(rawUn);
+          if (Array.isArray(parsedUn)) parsedUn.forEach(id => unDeleted.add(id));
+        }
+      }
+    } catch (e) {}
+    try {
+      const savedUn = await this.getSetting('unDeletedDocIds');
+      if (Array.isArray(savedUn)) savedUn.forEach(id => unDeleted.add(id));
+    } catch (e) {}
+
+    return Array.from(ids).filter(id => !unDeleted.has(id));
   }
 
   /**
@@ -146,6 +162,28 @@ class VaultStorage {
    */
   async addDeletedIds(newIds = []) {
     if (!Array.isArray(newIds) || newIds.length === 0) return;
+    const addSet = new Set(newIds.filter(Boolean));
+
+    // Si algún ID eliminado estaba marcado como unDeleted, purgarlo de unDeleted
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const rawUn = localStorage.getItem('boveda_undeleted_doc_ids');
+        if (rawUn) {
+          const parsed = JSON.parse(rawUn);
+          if (Array.isArray(parsed)) {
+            const rem = parsed.filter(id => !addSet.has(id));
+            localStorage.setItem('boveda_undeleted_doc_ids', JSON.stringify(rem));
+          }
+        }
+      }
+    } catch (e) {}
+    try {
+      const savedUn = await this.getSetting('unDeletedDocIds');
+      if (Array.isArray(savedUn)) {
+        await this.setSetting('unDeletedDocIds', savedUn.filter(id => !addSet.has(id)));
+      }
+    } catch (e) {}
+
     const current = await this.getDeletedIds();
     const merged = Array.from(new Set([...current, ...newIds.filter(Boolean)]));
     try {
@@ -157,6 +195,53 @@ class VaultStorage {
       await this.setSetting('deletedDocIds', merged);
     } catch (e) {}
     return merged;
+  }
+
+  /**
+   * Remueve uno o más IDs de la lista de eliminados (Spec 018: des-tombstone al restaurar respaldos)
+   * @param {Array<string>} idsToRemove
+   */
+  async removeDeletedIds(idsToRemove = []) {
+    if (!Array.isArray(idsToRemove) || idsToRemove.length === 0) return [];
+    const removeSet = new Set(idsToRemove.filter(Boolean));
+
+    // Registrar en unDeleted para inmunizar contra listas estáticas heredadas
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const rawUn = localStorage.getItem('boveda_undeleted_doc_ids');
+        const parsed = rawUn ? JSON.parse(rawUn) : [];
+        const mergedUn = Array.from(new Set([...(Array.isArray(parsed) ? parsed : []), ...idsToRemove.filter(Boolean)]));
+        localStorage.setItem('boveda_undeleted_doc_ids', JSON.stringify(mergedUn));
+      }
+    } catch (e) {}
+    try {
+      const savedUn = await this.getSetting('unDeletedDocIds') || [];
+      const mergedUn = Array.from(new Set([...(Array.isArray(savedUn) ? savedUn : []), ...idsToRemove.filter(Boolean)]));
+      await this.setSetting('unDeletedDocIds', mergedUn);
+    } catch (e) {}
+
+    // Remover de boveda_deleted_doc_ids y de deletedDocIds
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('boveda_deleted_doc_ids');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const updated = parsed.filter(id => !removeSet.has(id));
+            localStorage.setItem('boveda_deleted_doc_ids', JSON.stringify(updated));
+          }
+        }
+      }
+    } catch (e) {}
+    try {
+      const saved = await this.getSetting('deletedDocIds');
+      if (Array.isArray(saved)) {
+        const updated = saved.filter(id => !removeSet.has(id));
+        await this.setSetting('deletedDocIds', updated);
+      }
+    } catch (e) {}
+
+    return await this.getDeletedIds();
   }
 
   /**
@@ -387,9 +472,16 @@ class VaultStorage {
       throw new Error(validacion.error || 'Archivo de respaldo inválido o corrupto');
     }
 
-    const currentDocs = await this.getAllDocuments(userId);
     // Filtrar documentos que realmente contengan un payload cifrado AES-GCM válido
     const validBackupDocs = (backupData.documents || []).filter(esPayloadCifradoValido);
+
+    // Spec 018: Des-tombstonear automáticamente todos los IDs de expedientes legítimos restaurados
+    const restoredIds = validBackupDocs.map(d => d.id).filter(Boolean);
+    if (restoredIds.length > 0) {
+      await this.removeDeletedIds(restoredIds);
+    }
+
+    const currentDocs = await this.getAllDocuments(userId);
     const mergedDocs = fusionarDocumentosBackup(currentDocs, validBackupDocs);
 
     // Guardar documentos fusionados

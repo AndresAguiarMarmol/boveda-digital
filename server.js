@@ -925,8 +925,17 @@ const server = http.createServer(async (req, res) => {
       // 9. POST /api/v1/documents/batch-sync (Sincronización en lote Zero-Knowledge)
       if (pathname === '/api/v1/documents/batch-sync' && req.method === 'POST') {
         const body = await parseJSONBody(req);
-        const { documents = [], customDrawers = null } = body;
+        const { documents = [], customDrawers = null, unDeletedIds = [] } = body;
         const partition = resolveVaultPartition(authUser);
+
+        // Spec 018: Des-tombstonear IDs explícitos enviados por el cliente
+        if (Array.isArray(unDeletedIds) && db.deletedIds) {
+          unDeletedIds.forEach(id => {
+            if (id && !String(id).startsWith('doc_demo_')) {
+              db.deletedIds.delete(id);
+            }
+          });
+        }
 
         let userDocs = (db.documents.get(partition) || []).filter(
           d => d && d.id && !(db.deletedIds && db.deletedIds.has(d.id))
@@ -936,9 +945,13 @@ const server = http.createServer(async (req, res) => {
         documents.forEach(doc => {
           if (!doc || !doc.id) return;
           if (doc.title === 'Documento Restaurado' && doc.category === 'general') return;
-          if ((db.deletedIds && db.deletedIds.has(doc.id)) || String(doc.id).startsWith('doc_demo_')) {
-            return;
+          if (String(doc.id).startsWith('doc_demo_')) return;
+
+          // Spec 018: Si el cliente está enviando un documento legítimo no-demo, des-tombstonear en servidor
+          if (db.deletedIds && db.deletedIds.has(doc.id)) {
+            db.deletedIds.delete(doc.id);
           }
+
           const idx = userDocs.findIndex(d => d.id === doc.id);
           if (idx >= 0) {
             const incomingTime = new Date(doc.updated_at || 0).getTime();

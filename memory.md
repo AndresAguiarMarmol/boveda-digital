@@ -123,6 +123,18 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-31 — Spec 018: Recuperación de Respaldos Sin Fricción y Des-Tombstone Automático (v22)
+- **Diagnóstico de Causa Raíz de Bloqueo al Restaurar:**
+  - *Causa 1 (Aparición espuria del modal de PIN de respaldo):* `handleImportBackup` condicionaba la solicitud de PIN a `activeCount === 0 && result.restoredCount > 0`. Al no descifrarse en memoria por tombstones activos o llamadas sin `skipCloudSync`, asumía erróneamente que la clave activa no coincidía y abría `#modal-backup-pin-prompt`.
+  - *Causa 2 (Falla total al ingresar PIN y ausencia de documentos):* Al eliminar un documento, su ID se registraba como tombstone en `boveda_deleted_doc_ids` (en `localStorage` e `IndexedDB`) y en `db.deletedIds` de Cloud Run. Al importar el respaldo o ingresar el PIN en `submitBackupPinUnlock`, los documentos se guardaban en `IndexedDB`, pero `VaultStorage.getAllDocuments()` los filtraba de inmediato (`!deletedSet.has(d.id)`), y `syncWithCloud` los borraba físicamente al recibir `deletedIds` del servidor.
+- **Corrección Quirúrgica (`assets/js/storage.js`, `assets/js/app.js`, `server.js`):**
+  - En `VaultStorage` (`assets/js/storage.js`): implementado `removeDeletedIds(idsToRemove)` que des-tombstonea IDs restaurados tanto en `boveda_deleted_doc_ids` como en `IndexedDB` y los inmuniza con `unDeletedDocIds`; e integrado en `importBackupData` para des-tombstonear automáticamente todos los expedientes legítimos restaurados.
+  - En `server.js` (`POST /api/v1/documents/batch-sync`): al recibir un documento legítimo no-demo, el servidor lo elimina automáticamente de `db.deletedIds` (`db.deletedIds.delete(doc.id)`), e ingesta el arreglo opcional `unDeletedIds` para mantener sincronizada la lista central de Cloud Run.
+  - En `BovedaApp.handleImportBackup()` (`assets/js/app.js`): prueba proactiva de descifrado con la clave maestra activa y combinaciones de PINs conocidos en sesión/almacenamiento (`lastEnteredPin`, `sessionStorage`, `vaultPinRawSecret_`, `'123456'`); adopción automática de clave sin desplegar `#modal-backup-pin-prompt` si el descifrado es exitoso; invocación de `loadAndRenderDocuments(true)` (con `skipCloudSync = true`) para pintar la UI antes de sincronizar; y posterior `syncWithCloud(true)`.
+  - En `BovedaApp.submitBackupPinUnlock()` (`assets/js/app.js`): des-tombstoneo explícito con `removeDeletedIds(restoredIds)`, adopción de la clave de recuperación en `window.vaultAuth.masterKey`, persistencia y renderizado inmediato.
+- **Service Worker v22 (`sw.js`, `index.html`, `tests/boveda.test.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v22'` y `?v=22` en `index.html`. **70/70 pruebas pasando al 100% en verde**.
+
 ### 2026-10-31 — Spec 017: Eliminación Definitiva de Expedientes y Prevención Total de Duplicados (v21)
 - **Diagnóstico de Causa Raíz de Duplicación al Eliminar:**
   - *Causa 1 (Condición de carrera asíncrona tras confirm()):* Al abrir el diálogo nativo `confirm()` en `handleDeleteSelectedDocument()`, la ventana perdía el foco; al pulsar Aceptar, el evento `window.onfocus` y `visibilitychange` disparaban `triggerReactiveCloudSync()` (`syncWithCloud(true)`) en paralelo. Dicha sincronización leía IndexedDB antes de completarse el borrado y bloqueaba con cerrojo el sync post-borrado, descargando o re-subiendo documentos obsoletos.

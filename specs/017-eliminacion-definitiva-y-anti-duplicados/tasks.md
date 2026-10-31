@@ -19,4 +19,4 @@
   - [x] Ejecutar suite completa con `node --test` (68/68 pruebas pasando en verde).
 - [x] **6. Documentación y Entrega:**
   - [x] Actualizar `memory.md`.
-  - [ ] Commit y push a GitHub.
+  - [x] Commit y push a GitHub.

@@ -925,7 +925,7 @@ const server = http.createServer(async (req, res) => {
       // 9. POST /api/v1/documents/batch-sync (Sincronización en lote Zero-Knowledge)
       if (pathname === '/api/v1/documents/batch-sync' && req.method === 'POST') {
         const body = await parseJSONBody(req);
-        const { documents = [], customDrawers = null, unDeletedIds = [] } = body;
+        const { documents = [], customDrawers = null, unDeletedIds = [], deletedIds = [] } = body;
         const partition = resolveVaultPartition(authUser);
 
         // Spec 018 & 019: Des-tombstonear IDs explícitos enviados por el cliente (salvo demos o purgados históricos)
@@ -933,6 +933,17 @@ const server = http.createServer(async (req, res) => {
           unDeletedIds.forEach(id => {
             if (id && !String(id).startsWith('doc_demo_') && !INITIAL_PURGED_DOC_IDS.includes(id)) {
               db.deletedIds.delete(id);
+            }
+          });
+        }
+
+        const incomingDocIds = new Set(documents.map(d => d && d.id).filter(Boolean));
+
+        // Spec 022: Ingesta de bajas (deletedIds) enviadas por el cliente que no estén siendo restauradas
+        if (Array.isArray(deletedIds) && deletedIds.length > 0 && db.deletedIds) {
+          deletedIds.forEach(id => {
+            if (id && !incomingDocIds.has(id) && !String(id).startsWith('doc_demo_') && !INITIAL_PURGED_DOC_IDS.includes(id)) {
+              db.deletedIds.add(id);
             }
           });
         }
@@ -990,7 +1001,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // 10. DELETE /api/v1/documents/:id (Eliminar documento cifrado en nube - Spec 017)
+      // 10. DELETE /api/v1/documents/:id (Eliminar documento cifrado en nube - Spec 017 & Spec 022)
       if (pathname.startsWith('/api/v1/documents/') && req.method === 'DELETE') {
         const docId = pathname.replace('/api/v1/documents/', '').trim();
         const partition = resolveVaultPartition(authUser);
@@ -999,11 +1010,20 @@ const server = http.createServer(async (req, res) => {
         const initialLen = userDocs.length;
         const targetDoc = userDocs.find(d => d.id === docId);
 
+        // Spec 022: Extraer query params para permitir eliminación por categoría y título si el ID difiere
         let targetCat = '';
         let targetTitle = '';
+        try {
+          const parsedUrl = new URL(req.url, 'http://localhost');
+          const qCat = parsedUrl.searchParams.get('category');
+          const qTitle = parsedUrl.searchParams.get('title');
+          if (qCat) targetCat = qCat.trim().toLowerCase();
+          if (qTitle) targetTitle = qTitle.trim().toLowerCase().replace(/\s+/g, ' ');
+        } catch (e) {}
+
         if (targetDoc) {
-          targetCat = String(targetDoc.category || 'identidad').trim().toLowerCase();
-          targetTitle = String(targetDoc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (!targetCat) targetCat = String(targetDoc.category || 'identidad').trim().toLowerCase();
+          if (!targetTitle) targetTitle = String(targetDoc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
         }
 
         userDocs = userDocs.filter(d => {
@@ -1021,7 +1041,7 @@ const server = http.createServer(async (req, res) => {
           return true;
         });
 
-        if (userDocs.length === initialLen && !targetDoc) {
+        if (userDocs.length === initialLen && !targetDoc && (!targetCat || !targetTitle)) {
           saveDB();
           return sendJSON(res, 404, { error: 'Documento no encontrado o no pertenece al usuario' });
         }

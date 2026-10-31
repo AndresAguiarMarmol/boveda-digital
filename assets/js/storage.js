@@ -204,6 +204,70 @@ class VaultStorage {
   }
 
   /**
+   * Registra IDs explícitamente eliminados por el usuario para proteger contra resurrección (Spec 022)
+   * @param {Array<string>} ids
+   */
+  async addExplicitUserDeletedIds(ids = []) {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const validIds = ids.filter(Boolean);
+    const current = await this.getExplicitUserDeletedIds();
+    const merged = Array.from(new Set([...current, ...validIds]));
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('boveda_explicit_deleted_ids', JSON.stringify(merged));
+      }
+    } catch (e) {}
+    try {
+      await this.setSetting('explicitUserDeletedIds', merged);
+    } catch (e) {}
+    return merged;
+  }
+
+  /**
+   * Obtiene la lista de IDs explícitamente eliminados por el usuario (Spec 022)
+   * @returns {Promise<Array<string>>}
+   */
+  async getExplicitUserDeletedIds() {
+    let list = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('boveda_explicit_deleted_ids');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) list = parsed;
+        }
+      }
+    } catch (e) {}
+    try {
+      const stored = await this.getSetting('explicitUserDeletedIds');
+      if (Array.isArray(stored)) {
+        list = Array.from(new Set([...list, ...stored]));
+      }
+    } catch (e) {}
+    return list;
+  }
+
+  /**
+   * Remueve IDs de la lista de eliminados explícitamente (al restaurar respaldos legítimos - Spec 022)
+   * @param {Array<string>} idsToRemove
+   */
+  async removeExplicitUserDeletedIds(idsToRemove = []) {
+    if (!Array.isArray(idsToRemove) || idsToRemove.length === 0) return [];
+    const removeSet = new Set(idsToRemove.filter(Boolean));
+    const current = await this.getExplicitUserDeletedIds();
+    const updated = current.filter(id => !removeSet.has(id));
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('boveda_explicit_deleted_ids', JSON.stringify(updated));
+      }
+    } catch (e) {}
+    try {
+      await this.setSetting('explicitUserDeletedIds', updated);
+    } catch (e) {}
+    return updated;
+  }
+
+  /**
    * Remueve uno o más IDs de la lista de eliminados (Spec 018: des-tombstone al restaurar respaldos)
    * @param {Array<string>} idsToRemove
    */
@@ -319,9 +383,15 @@ class VaultStorage {
   async mergeCloudDocuments(cloudDocs = [], deletedIds = []) {
     let mergedCount = 0;
 
-    // Spec 019: Des-tombstonear automáticamente en este dispositivo todos los expedientes legítimos activos
-    // que la nube nos entrega, garantizando que lápidas locales obsoletas en el celular no bloqueen la sincronización
-    const validCloudDocs = (cloudDocs || []).filter(d => d && d.id && esPayloadCifradoValido(d) && !String(d.id).startsWith('doc_demo_'));
+    // Spec 022: Obtener IDs explícitamente eliminados por el usuario para impedir su resurrección
+    const explicitDeletedList = await this.getExplicitUserDeletedIds();
+    const explicitDeletedSet = new Set(explicitDeletedList.filter(Boolean));
+
+    // Spec 019 & Spec 022: Des-tombstonear automáticamente en este dispositivo todos los expedientes legítimos activos
+    // que la nube nos entrega, EXCEPTO aquellos que el usuario haya eliminado explícitamente
+    const validCloudDocs = (cloudDocs || []).filter(d =>
+      d && d.id && esPayloadCifradoValido(d) && !String(d.id).startsWith('doc_demo_') && !explicitDeletedSet.has(d.id)
+    );
     const incomingActiveIds = validCloudDocs.map(d => d.id);
     if (incomingActiveIds.length > 0) {
       await this.removeDeletedIds(incomingActiveIds);
@@ -336,7 +406,10 @@ class VaultStorage {
     }
     const allDeleted = await this.getDeletedIds();
     const activeSet = new Set(incomingActiveIds);
-    const deletedSet = new Set(allDeleted.filter(id => id && !activeSet.has(id)));
+    const deletedSet = new Set([
+      ...allDeleted.filter(id => id && !activeSet.has(id)),
+      ...explicitDeletedSet
+    ]);
     for (const delId of deletedSet) {
       if (delId) {
         try {
@@ -347,7 +420,7 @@ class VaultStorage {
     const existingAll = await this.getAllDocuments();
     for (const doc of cloudDocs) {
       if (!esPayloadCifradoValido(doc)) continue;
-      if (deletedSet.has(doc.id)) continue;
+      if (deletedSet.has(doc.id) || explicitDeletedSet.has(doc.id)) continue;
       const existing = await this.getDocument(doc.id);
       const isExistingCorruptedRestored = existing && existing.title === 'Documento Restaurado';
       if (!existing || isExistingCorruptedRestored || new Date(doc.updated_at || 0) >= new Date(existing.updated_at || 0)) {
@@ -384,6 +457,7 @@ class VaultStorage {
   async deleteDocument(id, recordTombstone = true) {
     if (recordTombstone && id) {
       await this.addDeletedIds([id]);
+      await this.addExplicitUserDeletedIds([id]);
     }
     const db = await this.getDB();
     if (!db) return true;
@@ -495,10 +569,11 @@ class VaultStorage {
     // Filtrar documentos que realmente contengan un payload cifrado AES-GCM válido
     const validBackupDocs = (backupData.documents || []).filter(esPayloadCifradoValido);
 
-    // Spec 018: Des-tombstonear automáticamente todos los IDs de expedientes legítimos restaurados
+    // Spec 018 & Spec 022: Des-tombstonear automáticamente todos los IDs de expedientes legítimos restaurados
     const restoredIds = validBackupDocs.map(d => d.id).filter(Boolean);
     if (restoredIds.length > 0) {
       await this.removeDeletedIds(restoredIds);
+      await this.removeExplicitUserDeletedIds(restoredIds);
     }
 
     const currentDocs = await this.getAllDocuments(userId);

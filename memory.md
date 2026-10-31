@@ -36,6 +36,7 @@ Registro de todo lo que debe preservarse entre sesiones de trabajo: arquitectura
   - `vault_license_data`: Metadatos de la licencia activa (`deviceId`, `email`, `exp`, `isPerpetual`).
   - `vault_user_profile`: Objeto JSON del perfil del usuario registrado por dispositivo (`firstName`, `lastName`, `email`, `phone`, `photo`, `updatedAt`).
   - `vault_user_verified`: Booleano que indica si el usuario completó la identificación obligatoria de su ficha y verificó su correo electrónico mediante el código OTP.
+  - `boveda_explicit_user_deleted_ids`: Conjunto persistente de IDs eliminados explícitamente por el usuario en el cliente, inmunes a re-sincronizaciones entrantes de la nube.
 
 - **Almacén `audit_log` (KeyPath: `id` auto-incremental):**
   - Registro de eventos (`LOGIN_SUCCESS`, `VAULT_UNLOCKED`, `DOC_CREATED`, `DOC_VIEWED`, `DOC_DELETED`, etc.).
@@ -69,6 +70,11 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 2. Decisiones vigentes
 
+- **Eliminación Definitiva Multi-Dispositivo y Sincronización Bidireccional de Bajas (Spec 022):**
+  - *Tombstones Explícitos de Usuario (`explicitUserDeletedIds`):* Al eliminar un expediente en cliente (`deleteDocument`), el identificador se persiste en `boveda_explicit_user_deleted_ids`. En `mergeCloudDocuments()`, los IDs explícitamente eliminados por el usuario jamás se des-tombstonean ni se re-insertan en `IndexedDB`, neutralizando la resurrección de documentos. Al restaurar intencionalmente mediante un respaldo JSON auténtico (`importBackupData`), los IDs restaurados se remueven de dicho conjunto.
+  - *Transmisión Bidireccional de Bajas en Sincronización en Lote (`POST /api/v1/documents/batch-sync`):* `syncWithCloud()` transmite el array `deletedIds` al endpoint de sincronización masiva en Cloud Run. Si la petición puntual `DELETE /api/v1/documents/:id` fallara por interrupción de señal en móvil, expiración de token o modo offline, la siguiente sincronización purga definitivamente el expediente en la base de datos del backend (`db.documents`) y persiste el tombstone en `db.deletedIds`.
+  - *Robustez de Petición REST de Borrado:* `handleDeleteSelectedDocument()` verifica y renueva el token JWT (`refreshSession`) si falta o es un mock token antes de llamar a `DELETE`, incorpora query parameters `?category=...&title=...` para purgar réplicas huérfanas en caso de IDs divergentes, y aplica timeout con `AbortController` (10s).
+  - Service Worker actualizado a `boveda-digital-v25` y scripts versionados a `?v=25`.
 - **Cifrado Zero-Knowledge y Web Crypto API:** El backend centralizado nunca recibe las claves maestras ni los documentos en texto claro. La clave simétrica de 256 bits se deriva exclusivamente en el cliente mediante PBKDF2 (100,000 iteraciones, SHA-256) a partir del PIN maestro del usuario y un salt criptográfico.
 - **Descifrado Resiliente y Auto-Migración de Adjuntos con Sales Históricas (Spec 021):** Los adjuntos digitalizados (`doc.attachment.ciphertext`) se descifran resilientemente mediante `decryptAttachmentWithFallback(doc)` tanto al visualizar (`openDocumentDetail`) como al descargar (`downloadDecryptedAttachment`). Si el adjunto fue cifrado originariamente con una sal histórica (ej. `ae8713595fed1e759db1062454187513`), el sistema lo descifra con claves derivadas de fallback (`candidateSalts` y PINs en sesión), lo re-cifra en caliente con la clave maestra activa (`MASTER_CRYPTO_SALT = '226000658459336d4184642799fc8498'`), actualiza el documento en `IndexedDB` y lo sincroniza transparentemente en segundo plano con Cloud Run, erradicando solicitudes residuales de PIN de respaldo. Igualmente, `submitBackupPinUnlock` re-cifra cualquier adjunto interno con la clave activa adoptada.
 - **Preservación y Portabilidad del Salt Criptográfico en Respaldos (`crypto_salt`):** Para garantizar que un respaldo JSON exportado en un dispositivo (PC) pueda ser importado y descifrado de forma transparente en otro dispositivo (teléfono celular), el archivo de respaldo exporta de manera pública y estandarizada el `crypto_salt` y el `pin_hash` de verificación. El módulo de descifrado en cliente implementa recuperación multi-salt automática que prueba claves secundarias/históricas con el PIN en memoria y re-cifra transparentemente los expedientes descifrados con la clave maestra activa actual.
@@ -123,6 +129,17 @@ Compatible con el backend centralizado de la app de Halterofilia:
 ---
 
 ## 3. Historial de cambios
+
+### 2026-10-31 — Spec 022: Eliminación Definitiva Multi-Dispositivo y Sincronización Bidireccional de Bajas (v25)
+- **Diagnóstico de Causa Raíz de Resurrección de Documentos al Borrar desde Celular:**
+  - *Causa 1 (Transmisión unidireccional omitiendo bajas en `batch-sync`):* En `syncWithCloud()` (`assets/js/app.js`), el cliente enviaba exclusivamente `{ documents: localDocs, customDrawers, unDeletedIds }` a `POST /api/v1/documents/batch-sync`. El arreglo de documentos eliminados (`deletedIds`) nunca se transmitía en la sincronización en lote.
+  - *Causa 2 (Fallo silencioso o token no renovado en petición `DELETE` móvil):* En `handleDeleteSelectedDocument()`, la petición `DELETE /api/v1/documents/${id}` solo se ejecutaba si existía `vaultAuth.accessToken` en memoria. En teléfonos celulares donde el token expiraba tras reposo en segundo plano o usaba credencial mock, la llamada fallaba silenciosamente con `.catch(() => null)` y el backend en Cloud Run nunca recibía la baja.
+  - *Causa 3 (Des-tombstoneo ciego e inserción forzada en `mergeCloudDocuments`):* Al no haberse borrado en Cloud Run, en la siguiente sincronización el servidor devolvía el expediente en `GET /api/v1/documents`. El método `mergeCloudDocuments()` en `storage.js` tomaba todos los IDs devueltos por el servidor (`incomingActiveIds`) y llamaba a `removeDeletedIds(incomingActiveIds)`, borrando la lápida local del teléfono y re-insertando el documento en `IndexedDB` (resurrección).
+- **Corrección Quirúrgica (`server.js`, `assets/js/storage.js`, `assets/js/app.js`, `sw.js`, `index.html`, tests):**
+  - En `server.js`: `POST /api/v1/documents/batch-sync` procesa `deletedIds`, los persiste en `db.deletedIds` y purga definitivamente los registros correspondientes de `db.documents` con `saveDB()`. `DELETE /api/v1/documents/:id` lee parámetros `category` y `title` para purgar réplicas con ID divergente.
+  - En `assets/js/storage.js`: implementado `explicitUserDeletedIds` (`addExplicitUserDeletedIds`, `getExplicitUserDeletedIds`, `removeExplicitUserDeletedIds`). `deleteDocument` registra las bajas explícitas del usuario. `mergeCloudDocuments()` jamás des-tombstonea ni re-inserta documentos en `explicitDeletedSet`.
+  - En `assets/js/app.js`: `handleDeleteSelectedDocument()` renueva la sesión (`refreshSession`) si el JWT falta o es mock antes de llamar a `DELETE`, agrega `?category=...&title=...` y usa timeout de 10s. `syncWithCloud()` empaqueta `deletedIds: genuineDeletedIds` en el payload de `batch-sync`.
+  - Actualizado Service Worker a `boveda-digital-v25`, query strings a `?v=25` y suites de prueba en `tests/server.test.js` y `tests/boveda.test.js`. **76/76 pruebas pasando al 100% en verde**.
 
 ### 2026-10-31 — Spec 021: Descifrado Resiliente y Auto-Migración de Adjuntos Históricos (v24)
 - **Diagnóstico de Causa Raíz de Solicitud de "PIN de Respaldo" al Abrir "Contrato Mariam Aguiar" y Otros Documentos:**

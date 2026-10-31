@@ -30,3 +30,4 @@ junto a un botón modal `"Ingresar PIN de Respaldo"`.
 4. **Actualización de Service Worker y Suite de Pruebas:**
    - Elevar Service Worker a `boveda-digital-v24`.
    - Incorporar pruebas unitarias en `tests/boveda.test.js`.
+

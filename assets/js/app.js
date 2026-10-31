@@ -2291,20 +2291,35 @@ class BovedaApp {
       this.renderMetrics();
       this.renderCabinet();
 
+      // Spec 022: Asegurar token JWT genuino del servidor antes de despachar eliminación en la nube
+      let token = window.vaultAuth?.accessToken;
+      if (!token || token.includes('mock_signature')) {
+        const refreshed = await window.vaultAuth?.refreshSession();
+        if (refreshed) {
+          token = window.vaultAuth.accessToken;
+        }
+      }
+
       // Eliminar en la nube para todos los IDs afectados
-      if (window.vaultAuth && window.vaultAuth.accessToken) {
+      if (window.vaultAuth && token) {
         for (const id of idsToDelete) {
           try {
-            let delRes = await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${id}`, {
+            const url = `${window.vaultAuth.apiBaseUrl}/api/v1/documents/${id}?category=${encodeURIComponent(targetCat)}&title=${encodeURIComponent(targetTitle)}`;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
+            let delRes = await fetch(url, {
               method: 'DELETE',
-              headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
+              headers: { 'Authorization': `Bearer ${token}` },
+              signal: controller.signal
             }).catch(() => null);
+            clearTimeout(timeout);
             if (delRes && delRes.status === 401) {
               const refreshed = await window.vaultAuth.refreshSession();
               if (refreshed) {
-                await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${id}`, {
+                token = window.vaultAuth.accessToken;
+                await fetch(url, {
                   method: 'DELETE',
-                  headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
+                  headers: { 'Authorization': `Bearer ${token}` }
                 }).catch(() => null);
               }
             }
@@ -3206,7 +3221,10 @@ class BovedaApp {
       // 1. Obtener todos los documentos y gavetas locales de IndexedDB (excluyendo eliminados y demos)
       const rawLocalDocs = await window.vaultStorage.getAllDocuments(user.sub);
       const deletedIds = typeof window.vaultStorage.getDeletedIds === 'function' ? await window.vaultStorage.getDeletedIds() : [];
-      const deletedSet = new Set(deletedIds);
+      const explicitDeleted = typeof window.vaultStorage.getExplicitUserDeletedIds === 'function' ? await window.vaultStorage.getExplicitUserDeletedIds() : [];
+      const combinedDeletedIds = Array.from(new Set([...deletedIds, ...explicitDeleted]));
+      const deletedSet = new Set(combinedDeletedIds);
+      const genuineDeletedIds = combinedDeletedIds.filter(id => id && !String(id).startsWith('doc_demo_') && !['doc_demo_pasaporte', 'doc_demo_licencia', 'doc_demo_tarjeta'].includes(id));
       const seenSyncKeys = new Set();
       const localDocs = rawLocalDocs.filter(d => {
         if (!d || !d.id || deletedSet.has(d.id) || String(d.id).startsWith('doc_demo_')) return false;
@@ -3218,10 +3236,16 @@ class BovedaApp {
       const localCustomDrawers = (await window.vaultStorage.getSetting('customDrawers_' + user.sub)) || {};
       const unDeletedIds = typeof window.vaultStorage.getSetting === 'function' ? (await window.vaultStorage.getSetting('unDeletedDocIds') || []) : [];
 
-      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados y estructura de gavetas)
+      // 2. Subir en lote a la Nube (Zero-Knowledge: sólo payloads cifrados, estructura de gavetas y bajas confirmadas)
       if (token) {
         const controllerSync = new AbortController();
         const timeoutSync = setTimeout(() => controllerSync.abort(), 30000);
+        const syncPayload = JSON.stringify({
+          documents: localDocs,
+          customDrawers: localCustomDrawers,
+          unDeletedIds,
+          deletedIds: genuineDeletedIds
+        });
 
         let syncRes = await fetch(`${apiBase}/api/v1/documents/batch-sync`, {
           method: 'POST',
@@ -3229,7 +3253,7 @@ class BovedaApp {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers, unDeletedIds }),
+          body: syncPayload,
           signal: controllerSync.signal
         }).catch(err => {
           console.warn('[BovedaApp] Petición batch-sync diferida:', err.message);
@@ -3248,7 +3272,7 @@ class BovedaApp {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
               },
-              body: JSON.stringify({ documents: localDocs, customDrawers: localCustomDrawers, unDeletedIds })
+              body: syncPayload
             }).catch(() => null);
           }
         }

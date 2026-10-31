@@ -619,6 +619,50 @@ test('Servidor API: Inicialización y Suite de Endpoints', async (t) => {
     });
     assert.ok(!getDocs.body.documents.some(d => d.id === purgedId), 'purgedId no debe estar en documents activos');
   });
+
+  await t.test('SDD 022: POST /api/v1/documents/batch-sync ingesta deletedIds y purga definitivamente los expedientes de db.documents', async () => {
+    const loginRes = await makeRequest(
+      '/api/v1/auth/login',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { email: 'andres.pro@boveda.com', password: 'PasswordSeguro123!' }
+    );
+    const token = loginRes.body.accessToken;
+    const testDocId = 'doc_test_sdd022_permanent_del';
+
+    // 1. Crear documento en la nube
+    await makeRequest(
+      '/api/v1/documents',
+      { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } },
+      {
+        id: testDocId,
+        category: 'identidad',
+        title: 'Documento Para Eliminar Definitivamente SDD 022',
+        encrypted_payload: 'vzVtVTcoRaXpqcPHSXeKnr+W8O6BjpLuERkGgtMddZiAwSaT5fnSf9sM61Uo7Wxwi7//yVcZMQa3YjV6q8q0HZuy/GBn1jSeHM46dUtKsWo6iuP9a0NUnp7sY6VR/W0LZhtH0iOCZZe3a/m/86Ji9PHBvs1M8+HaJM4rQMZRgBma4txxv66Oug49Iv3lami9110AYbHLhsvVWVat4iV/A1vmepKT5ONdFHITUs6hNtRlcbHrFojqcMCbuI/3Q94+UVLQWahSEYzl4eZisyCorsodRIDsi+IJM5my/xJfHMvLt9176r6jP2jZLZkgY1EKd4CO7oK6Kwy8oP4VED1skthA2JTD7EWtXQ87DDbkA0i5Lq+vQXWn1FhF7/BDuoojh5V2Oo/CQZNFQs7ynx4dABehBw4dtPRUA63RfAa3J1EWi6oRwjirvS/LdC4qfYDlKoeW3TMSXTew64IQ8NRzYzfDQ5oVZGULlQhhFaGr7U2c11X9M09bv8jd3NTzO2XQ9wXsOON43aUYqrZIQHocBe0SszG0FpYzDxcDxzTqVQg9eWHILRbMK9FxiqjbTDqsl/O2Li/KunKV9R7Y5atoJt31Lo0ENfnetc63esL8MHxWkOYIktUY4RHMZxKu30xIq07aDt+HdmhXL7JMaj7ZR19KFrfm1LZzdpcNvTDFreRs5uvhFBXWN2LNkKzDbPV9cfKwTO5JZtvaGv8xTFKPXOXYLvsh4VzTMeZgRYwpfUpnRlpjx1ZF59Dcqx3rs5LSE07AtZQqRpxQyX1gmdL6ov4ndXoO4TRkGS42DNB4+JQEqg7oSUD5R81XSoAHxDzbMbcjX/Y6ZdwIaQVx22732zPKusv65wWacNfhJVGefbWVx6i7n+T8g50N15R106UKWI+KH2+7oDYPiJIwnI2UBp+I+R3x/rYc10RB1hEqG+8oKNYYYkfMiD5dT/3CHxWtKoniyiQfAMIra3h/4ojvt9L4NhVtL/4teP+uc4+IsEDWAGbuE67XYIGkCAiG81olWSeYSGnmBqTFWC+u6UDW0NYEybZwN0nLK/lMroeV1F2zztFuNN5ZVYRRMFPCjokplKlF5R88ZhyhWmDT63LGnRdRqAXhEYT9gZ1tPQNGpeqlbxrMw3jxf9g6ORq/n4mwINsWtKGjy08M3mVfVqEvlfkHaEFcQt7CQMFY8zPTRgGnYXCSvcXjaR5OjFcF41jqGbNyrRL3Jx7h3HPXpgcaJeI+GGw6C8YbkN6RIwRAkrxbo7O1UXomjXFlrkHKeAr0nOag6zXDqL/im3PsJlzioEPnORNRz51SjUclPnngQilUKJUg19GgI0uMkmGs9JvJjbyslkvio7TlyiKC7FfbY3yQda4JYmagjT66cDDo95+OgLYwiQcZUDcngKsF9lPh/hn4CIOikjulrpwEMgYjLyKWKEdt9jIuQTk8LnaTOrSWaELt93FltOWiGxl68ZqUG9l8JQObe/L1afDN/vZEu1kfKU0hqyrE4nhlZAP+L7xot0Lo3REwxjADU6ggVh7TVJDxMuJTSprN33iZ54pMmlwqru9InQkr49XrVC76IqpLyt+DLC1qGwEkuW270Iiy0haHE4maOdv/rOMuUs0Wl83A7l5cpNJh+Cac6P+i8cnvbgFH9UNOIeZqMOnMSg01dEVtLi0FT2Bwu95gdFlzi28IEGCInsk3qeQpL+GuhXWNZ5ZM32Q5uyLrZZcPHO2MT5b0kyrYmCvol/+eyAV6GjYn6S1FyoXr1FvJmI7ce1sTqF7RyiJJ6mue8J8098X/zTYTdHaoHyoWiQYh8E1L4LRS4ZUeCWeiUMSD8FBFepPzdzrO4ndNOyu7qAR30/FhHcyShrvBMR80T54UfWF3z1UfBWzRN7WOHEIGE0cQvdxBHbXOTvSzxGWAP+nt/Zr3h4YZdRMkzkcBKF8TsGVVZlA+G6RpRvcH+1j6/OCsWKrIgzIE9FFsijpj/qL+qDkQsO4BDwiFO52RNQwLrWNzjOPTFkTW1XGlpJzIDoFGJMCPY1C0o7QU0R4n8aN6YEJ8jAOx8w+8G8/jS44fhGQbzYB7MTv06S/RoscdyDT/7uLOO2qhLGm5O4vFEpzjr453cGS2DIgK7o39fbnt2vbUiuB2OtdSeVLKwFcJlRJjFJnLyh6ld9aMYdggcSXHRmI+hJdykLdyVo+V2On1jVFC+eMSa5czLdftnhu+OzpehTYVTdv8ZdKX5X3OheH06h7fsIfO8YgwRnIZxj6oIYXgF0g5Q42Po6UiWZ54h6w6hpwQQGaFgQfiUAABMLKIGwBB1GJB5WGBSFUzZ2NrIAxBUWpVtsUxeOezkNiFre1OOmpQRCAQX3CxEK72yO8N2+qQdJXpuvzq/qljCwQ5H5VHLiQzb1kSa9fnTg3tzRKRgZGeqVAcF8YXuEuEaL5CB30hYVmx1vaC0D32DlvE2FAc780t0+K3lkFXt9x9J8SDEblzVxFcg96EhVOxnLxc4d7wtuBDrEpvxJP08IjkkL66r9t2Viwv/VAUeS6xvjqIIqwozYt6HTT6G13hR0xkSqCsJKQu3L6WrOziciDIMnymCgzuCHgNfUu9f6ZRpuKeAsLzsDU6dE9lKZbTm7ZrfIuO1MFtZHuxGVro66OMdBJEt680mgHlI1e/y6bvgVXdTnGjJzgpLalxAnDyFnsr/Fg7YQQjzCP9P8WExnsYXnEhCch9SE4zRuZiIhFsVuE0/br6AgZ5kEUBwU1lfCSXSxwq7Rqqy2kKM2pl4ttt+MlvW6TDLLUXhnMSmX63zVusArog0MHbvER6//AcojfZT3utplVH4aUAvPIhPZyh2KckRaKR9Y2GvDfy6OWgYPc67shoo5k3gQyK+LEFVtSKWob77JhNZBVd+/cNP7gIFrelD4hsgvnWQ1XL5Vz2Rec56M4k8oPJoKImobsJ7zNcOVxMO4yj523RsHUqrSnCbA6jzVBgi2IgEqq0z1VAjIStBcbxadt2wb8gyJLZoH+j0bLGbJmozXYr/Lzh01EByrH1jMGwp+sffRjnRq01uC5CAOGIxGVn1BhEldOWnM0AVCMkrWPJ6N9N1hKjj4iyYiJfO1rDs6f16q+c3IF0mr3DZ/dzHNz2JulQI1AvLkFoM47tghCrYa145HFCG+rNIMuUlT3t5O7osDD+9wB73mYkQJcuT2Byyj4TSnOcLpYX',
+        iv: 'vzVtVTcoRaXpqcb8',
+        checksum: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+      }
+    );
+
+    // 2. Transmitir su eliminación vía batch-sync (simulando celular que sincroniza)
+    const syncDelRes = await makeRequest(
+      '/api/v1/documents/batch-sync',
+      { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } },
+      {
+        documents: [],
+        deletedIds: [testDocId]
+      }
+    );
+
+    assert.equal(syncDelRes.status, 200);
+    assert.ok(syncDelRes.body.deletedIds.includes(testDocId), 'testDocId debe quedar registrado en deletedIds tras batch-sync');
+
+    // 3. Comprobar que GET /api/v1/documents no lo entrega
+    const getDocs = await makeRequest('/api/v1/documents', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.ok(!getDocs.body.documents.some(d => d.id === testDocId), 'testDocId no debe ser entregado en GET /documents tras batch-sync con deletedIds');
+  });
 });
 
 

@@ -1279,7 +1279,7 @@ test('SDD 012, 013, 014 & 015: Unificación Multi-Dispositivo, Deduplicación At
   assert.equal(esPayloadCifradoValido({ id: 'doc_test', title: 'Documento Restaurado', category: 'general', encrypted_payload: 'ABCD' }), false, 'esPayloadCifradoValido debe rechazar registros corruptos Documento Restaurado');
 
   // 5. Service Worker v19 o superior
-  assert.ok(/boveda-digital-v(19|20|21|22)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19, v20, v21 o v22');
+  assert.ok(/boveda-digital-v(19|20|21|22|23)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o superior');
 });
 
 test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de réplicas sin duplicación', () => {
@@ -1306,8 +1306,8 @@ test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de ré
   assert.ok(serverJs.includes('// Spec 017: Purgar también cualquier duplicado huérfano con la misma categoría y título'), 'server.js debe purgar duplicados con misma categoría y título al eliminar');
 
   // 5. Service Worker v21 o superior y cache busting en index.html
-  assert.ok(/boveda-digital-v(21|22)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v21 o v22');
-  assert.ok(/app\.js\?v=(21|22)/.test(html), 'index.html debe cargar app.js con ?v=21 o ?v=22');
+  assert.ok(/boveda-digital-v(21|22|23)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v21 o superior');
+  assert.ok(/app\.js\?v=(21|22|23)/.test(html), 'index.html debe cargar app.js con ?v=21 o superior');
 });
 
 test('SDD 016: Motor OCR archivar-documentos (SKILL.md) extrae metadatos y normaliza nombre_archivo y ruta_drive', () => {
@@ -1397,12 +1397,71 @@ test('SDD 018: removeDeletedIds des-tombstonea expedientes y permite recuperaci�
   await fakeStorage.importBackupData(fakeBackup, 'usr_test_018');
   assert.ok(!(await fakeStorage.getDeletedIds()).includes(testId), 'testId debe des-tombstonearse tras importBackupData');
 
-  // 4. Service Worker v22 y cache busting en index.html
+  // 4. Service Worker v22 / v23 y cache busting en index.html
   const rootDir = path.join(__dirname, '..');
   const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
-  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v22'"), 'sw.js debe operar bajo boveda-digital-v22');
-  assert.ok(html.includes('app.js?v=22'), 'index.html debe cargar app.js con ?v=22');
+  assert.ok(swJs.includes('boveda-digital-v'), 'sw.js debe operar bajo versionado seguro');
+  assert.ok(html.includes('app.js?v='), 'index.html debe cargar app.js con versionado');
+});
+
+test('SDD 019: Resiliencia de sincronización en celular, des-tombstone automático en mergeCloudDocuments y SW v23', async () => {
+  const { VaultStorage } = require('../assets/js/storage.js');
+  const settingsStore = new Map();
+  const docsStore = new Map();
+
+  const fakeStorage = Object.create(VaultStorage.prototype);
+  fakeStorage.getSetting = async (k) => settingsStore.get(k) || null;
+  fakeStorage.setSetting = async (k, v) => { settingsStore.set(k, v); return true; };
+  fakeStorage.saveSetting = async (k, v) => fakeStorage.setSetting(k, v);
+  fakeStorage.saveDocument = async (doc) => { docsStore.set(doc.id, doc); return doc; };
+  fakeStorage.getDocument = async (id) => docsStore.get(id) || null;
+  fakeStorage.deleteDocument = async (id, recordTombstone = true) => {
+    docsStore.delete(id);
+    if (recordTombstone) await fakeStorage.addDeletedIds([id]);
+    return true;
+  };
+  fakeStorage.getAllDocuments = async () => Array.from(docsStore.values());
+  fakeStorage.logAuditEvent = async () => true;
+
+  const activeDocId = 'doc_active_from_cloud_019';
+  // 1. Simular que el celular tenía activeDocId en su lista local de borrados
+  await fakeStorage.addDeletedIds([activeDocId]);
+  let deletedList = await fakeStorage.getDeletedIds();
+  assert.ok(deletedList.includes(activeDocId), 'activeDocId debe estar inicialmente en deletedIds del celular');
+
+  // 2. Ejecutar mergeCloudDocuments con cloudDocs que incluye activeDocId como documento activo legítimo
+  const cloudDocs = [
+    {
+      id: activeDocId,
+      category: 'identidad',
+      title: 'Documento Activo en Nube',
+      encrypted_payload: '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',
+      iv: 'vzVtVTcoRaXpqcb8',
+      checksum: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      updated_at: new Date().toISOString()
+    }
+  ];
+
+  await fakeStorage.mergeCloudDocuments(cloudDocs, ['doc_other_deleted']);
+
+  // Debe haberse des-tombstoneado activeDocId y guardado en docsStore
+  deletedList = await fakeStorage.getDeletedIds();
+  assert.ok(!deletedList.includes(activeDocId), 'activeDocId no debe estar en deletedIds tras mergeCloudDocuments');
+  assert.ok(docsStore.has(activeDocId), 'activeDocId debe haberse guardado en docsStore local');
+
+  // 3. Validar timeout de 8000ms en auth.js y app.js
+  const rootDir = path.join(__dirname, '..');
+  const authJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'auth.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  assert.ok(authJs.includes('8000'), 'auth.js debe tener timeout de al menos 8000ms en checkServerConnection');
+  assert.ok(appJs.includes('8000'), 'app.js debe tener timeout de al menos 8000ms en testCloudConnection');
+
+  // 4. Service Worker v23 y cache busting en index.html
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v23'"), 'sw.js debe operar bajo boveda-digital-v23');
+  assert.ok(html.includes('app.js?v=23'), 'index.html debe cargar app.js con ?v=23');
 });
 
 

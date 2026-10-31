@@ -68,3 +68,4 @@ flowchart TD
      - `removeDeletedIds` des-tombstonea documentos eliminados.
      - `importBackupData` restaura documentos previamente eliminados.
      - `POST /api/v1/documents/batch-sync` remueve IDs restaurados de `db.deletedIds`.
+

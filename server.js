@@ -337,7 +337,7 @@ function loadDB() {
       }
       for (const [partKey, docsArr] of db.documents.entries()) {
         if (Array.isArray(docsArr)) {
-          db.documents.set(partKey, docsArr.filter(d => d && d.id && !db.deletedIds.has(d.id)));
+          db.documents.set(partKey, docsArr.filter(d => d && d.id && !db.deletedIds.has(d.id) && !INITIAL_PURGED_DOC_IDS.includes(d.id)));
         }
       }
       if (parsed.shares) {
@@ -928,26 +928,27 @@ const server = http.createServer(async (req, res) => {
         const { documents = [], customDrawers = null, unDeletedIds = [] } = body;
         const partition = resolveVaultPartition(authUser);
 
-        // Spec 018: Des-tombstonear IDs explícitos enviados por el cliente
+        // Spec 018 & 019: Des-tombstonear IDs explícitos enviados por el cliente (salvo demos o purgados históricos)
         if (Array.isArray(unDeletedIds) && db.deletedIds) {
           unDeletedIds.forEach(id => {
-            if (id && !String(id).startsWith('doc_demo_')) {
+            if (id && !String(id).startsWith('doc_demo_') && !INITIAL_PURGED_DOC_IDS.includes(id)) {
               db.deletedIds.delete(id);
             }
           });
         }
 
         let userDocs = (db.documents.get(partition) || []).filter(
-          d => d && d.id && !(db.deletedIds && db.deletedIds.has(d.id))
+          d => d && d.id && !(db.deletedIds && db.deletedIds.has(d.id)) && !INITIAL_PURGED_DOC_IDS.includes(d.id)
         );
 
-        // Spec 013 & 014: Fusionar documentos sin permitir jamás borrados masivos ni sobrescrituras con "Documento Restaurado"
+        // Spec 013, 014 & 019: Fusionar documentos sin permitir jamás borrados masivos, sobrescrituras con "Documento Restaurado" ni purgados
         documents.forEach(doc => {
           if (!doc || !doc.id) return;
           if (doc.title === 'Documento Restaurado' && doc.category === 'general') return;
           if (String(doc.id).startsWith('doc_demo_')) return;
+          if (INITIAL_PURGED_DOC_IDS.includes(doc.id)) return;
 
-          // Spec 018: Si el cliente está enviando un documento legítimo no-demo, des-tombstonear en servidor
+          // Spec 018 & 019: Si el cliente está enviando un documento legítimo no-demo ni purgado, des-tombstonear en servidor
           if (db.deletedIds && db.deletedIds.has(doc.id)) {
             db.deletedIds.delete(doc.id);
           }

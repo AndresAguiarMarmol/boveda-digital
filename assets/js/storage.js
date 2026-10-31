@@ -312,8 +312,21 @@ class VaultStorage {
    */
   async mergeCloudDocuments(cloudDocs = [], deletedIds = []) {
     let mergedCount = 0;
+
+    // Spec 019: Des-tombstonear automáticamente en este dispositivo todos los expedientes legítimos activos
+    // que la nube nos entrega, garantizando que lápidas locales obsoletas en el celular no bloqueen la sincronización
+    const validCloudDocs = (cloudDocs || []).filter(d => d && d.id && esPayloadCifradoValido(d) && !String(d.id).startsWith('doc_demo_'));
+    const incomingActiveIds = validCloudDocs.map(d => d.id);
+    if (incomingActiveIds.length > 0) {
+      await this.removeDeletedIds(incomingActiveIds);
+    }
+
     if (Array.isArray(deletedIds) && deletedIds.length > 0) {
-      await this.addDeletedIds(deletedIds);
+      const activeSet = new Set(incomingActiveIds);
+      const genuineDeleted = deletedIds.filter(id => id && !activeSet.has(id));
+      if (genuineDeleted.length > 0) {
+        await this.addDeletedIds(genuineDeleted);
+      }
     }
     const allDeleted = await this.getDeletedIds();
     const deletedSet = new Set(allDeleted);

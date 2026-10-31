@@ -3280,7 +3280,7 @@ class BovedaApp {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // Spec 019: 8000ms para latencia móvil y cold start
       const res = await fetch(`${testUrl}/api/health`, { signal: controller.signal });
       clearTimeout(timeoutId);
 

@@ -78,8 +78,9 @@ class VaultAuth {
    */
   async checkServerConnection() {
     try {
+      // Spec 019: Tolerancia de 8000ms para latencia de redes móviles celulares (4G/LTE) y cold starts en Cloud Run
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(`${this.apiBaseUrl}/api/health`, { signal: controller.signal });
       clearTimeout(timeoutId);
       return res.ok;

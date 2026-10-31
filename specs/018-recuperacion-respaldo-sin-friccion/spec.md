@@ -34,3 +34,4 @@ Se presentan dos fallas críticas:
 - **Si** los expedientes del respaldo proceden de otro origen y no pueden descifrarse con ninguna clave en memoria,
 - **el sistema debe** abrir `#modal-backup-pin-prompt`.
 - **Al ingresar** el PIN correcto, el sistema debe descifrar los expedientes, re-cifrarlos con la clave maestra activa del dispositivo receptor, eliminar sus tombstones y renderizarlos exitosamente en el archivador.
+

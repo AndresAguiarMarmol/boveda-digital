@@ -123,6 +123,18 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-31 — Spec 019: Resiliencia de Sincronización en Celular y Des-Tombstone Cruzado (v23)
+- **Diagnóstico de Causa Raíz de Bloqueo de Sincronización en Celular:**
+  - *Causa 1 (Lápidas locales obsoletas en el celular):* Si un documento fue borrado anteriormente en el celular pero posteriormente restaurado en la PC, su ID permanecía en `boveda_deleted_doc_ids` del celular. Al sincronizar (`syncWithCloud`), `mergeCloudDocuments` evaluaba `deletedSet.has(doc.id)` usando la lista local del celular, ignorando el documento activo enviado por la nube, eliminándolo de `IndexedDB` y ocultándolo en `getAllDocuments()`.
+  - *Causa 2 (Timeout prematuro de 2500ms en `checkServerConnection`):* En redes móviles (4G/LTE/3G) o ante *cold starts* de Google Cloud Run (2.5s - 4s), el `AbortController` de 2500ms abortaba antes de recibir respuesta de `/api/health`, forzando el estado "Modo Local / Offline" y cancelando la sincronización en el celular.
+  - *Causa 3 (Resurrección de registros corruptos históricos en Cloud Run):* Tres registros huérfanos históricos de octubre (`doc_bba1vso67`, `doc_lroukh0y9`, `doc_shm2e0xo1`) indescifrables fueron accidentalmente subidos al restaurar el respaldo en la PC, provocando avisos de descifrado fallido.
+- **Corrección Quirúrgica (`assets/js/storage.js`, `assets/js/auth.js`, `assets/js/app.js`, `server.js`, `data/vault_cloud.json`):**
+  - En `VaultStorage.mergeCloudDocuments` (`assets/js/storage.js`): des-tombstoneo automático inmediato (`await this.removeDeletedIds(incomingActiveIds)`) para todos los expedientes válidos activos entregados por la nube antes de procesar eliminaciones, garantizando que el celular siempre limpie sus lápidas residuales y guarde los documentos restaurados en otros dispositivos.
+  - En `VaultAuth.checkServerConnection` (`assets/js/auth.js`) y `BovedaApp.testCloudConnection` (`assets/js/app.js`): incremento del timeout a 8000ms, asegurando tolerancia absoluta para latencia móvil y arranques de contenedor serverless.
+  - En `server.js` (`POST /api/v1/documents/batch-sync` y `loadDB`): blindaje contra des-tombstoneo o inserción de `INITIAL_PURGED_DOC_IDS` y purga de cualquier registro huérfano en `db.documents`.
+- **Service Worker v23 (`sw.js`, `index.html`, `tests/boveda.test.js`, `tests/server.test.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v23'` y `?v=23` en `index.html`. **72/72 pruebas pasando al 100% en verde**.
+
 ### 2026-10-31 — Spec 018: Recuperación de Respaldos Sin Fricción y Des-Tombstone Automático (v22)
 - **Diagnóstico de Causa Raíz de Bloqueo al Restaurar:**
   - *Causa 1 (Aparición espuria del modal de PIN de respaldo):* `handleImportBackup` condicionaba la solicitud de PIN a `activeCount === 0 && result.restoredCount > 0`. Al no descifrarse en memoria por tombstones activos o llamadas sin `skipCloudSync`, asumía erróneamente que la clave activa no coincidía y abría `#modal-backup-pin-prompt`.

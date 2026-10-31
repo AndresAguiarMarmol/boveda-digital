@@ -52,3 +52,4 @@ Al eliminar un expediente (o registros de prueba demo), el sistema duplica regis
 3. El evento `focus` tras cerrar el diálogo `confirm()` no dispara sincronizaciones prematuras concurrentes.
 4. Todas las 66 pruebas automatizadas existentes siguen pasando al 100% en verde.
 5. Se agregan pruebas unitarias específicas para Spec 017 verificando eliminación limpia, propagación de tombstones y no-duplicación.
+

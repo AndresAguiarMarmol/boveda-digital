@@ -15,3 +15,4 @@
    - Conectar `startCameraScanner()` con `handleProcessOcrSkill()` y enriquecer `handleSaveNewDocument()` con la nomenclatura y ruta de Google Drive.
 5. **[`sw.js`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/sw.js), [`tests/boveda.test.js`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/tests/boveda.test.js) y [`memory.md`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/memory.md)**:
    - Actualizar `CACHE_NAME` a `boveda-digital-v20`, añadir pruebas unitarias para `SDD 016` (`procesarTextoOCRParaDrive`) y registrar en `memory.md`.
+

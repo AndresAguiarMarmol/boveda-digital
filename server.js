@@ -947,12 +947,12 @@ const server = http.createServer(async (req, res) => {
               userDocs[idx] = { ...userDocs[idx], ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() };
             }
           } else {
-            // Spec 015: Evitar que un dispositivo inserte un segundo registro con distinto ID para el mismo (category, title)
+            // Spec 015 & 017: Evitar que un dispositivo inserte un segundo registro con distinto ID para el mismo (category, title)
             const incCat = String(doc.category || 'identidad').trim().toLowerCase();
-            const incTitle = String(doc.title || '').trim().toLowerCase();
+            const incTitle = String(doc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const dupIdx = userDocs.findIndex(
               d => String(d.category || 'identidad').trim().toLowerCase() === incCat &&
-                   String(d.title || '').trim().toLowerCase() === incTitle
+                   String(d.title || '').trim().toLowerCase().replace(/\s+/g, ' ') === incTitle
             );
             if (dupIdx < 0) {
               userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
@@ -976,16 +976,38 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // 10. DELETE /api/v1/documents/:id (Eliminar documento cifrado en nube)
+      // 10. DELETE /api/v1/documents/:id (Eliminar documento cifrado en nube - Spec 017)
       if (pathname.startsWith('/api/v1/documents/') && req.method === 'DELETE') {
         const docId = pathname.replace('/api/v1/documents/', '').trim();
         const partition = resolveVaultPartition(authUser);
         if (db.deletedIds && docId) db.deletedIds.add(docId);
         let userDocs = db.documents.get(partition) || [];
         const initialLen = userDocs.length;
-        userDocs = userDocs.filter(d => d.id !== docId);
+        const targetDoc = userDocs.find(d => d.id === docId);
 
-        if (userDocs.length === initialLen) {
+        let targetCat = '';
+        let targetTitle = '';
+        if (targetDoc) {
+          targetCat = String(targetDoc.category || 'identidad').trim().toLowerCase();
+          targetTitle = String(targetDoc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        }
+
+        userDocs = userDocs.filter(d => {
+          if (!d || !d.id) return false;
+          if (d.id === docId) return false;
+          // Spec 017: Purgar también cualquier duplicado huérfano con la misma categoría y título
+          if (targetCat && targetTitle) {
+            const dCat = String(d.category || 'identidad').trim().toLowerCase();
+            const dTitle = String(d.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            if (dCat === targetCat && dTitle === targetTitle) {
+              if (db.deletedIds) db.deletedIds.add(d.id);
+              return false;
+            }
+          }
+          return true;
+        });
+
+        if (userDocs.length === initialLen && !targetDoc) {
           saveDB();
           return sendJSON(res, 404, { error: 'Documento no encontrado o no pertenece al usuario' });
         }

@@ -96,20 +96,10 @@ class VaultStorage {
    * @returns {Promise<Array<string>>}
    */
   async getDeletedIds() {
-    const canonicalProtectedIds = new Set([
-      'doc_huzcvq2ff',
-      'doc_ekd0onmfw',
-      'doc_ps25oua80',
-      'doc_9lskrlugo',
-      'doc_yjdulku41',
-      'doc_kzs5fj88v',
-      'doc_rehd8z4vp',
-      'doc_teu75glli',
-      'doc_vqp0qhkbm',
-      'doc_a7fmu6aij',
-      'doc_y56couzw3'
-    ]);
     const ids = new Set([
+      'doc_demo_pasaporte',
+      'doc_demo_licencia',
+      'doc_demo_tarjeta',
       'doc_bba1vso67',
       'doc_lroukh0y9',
       'doc_ovjy4qg6p',
@@ -121,10 +111,9 @@ class VaultStorage {
       'doc_xgcyu22gc',
       'doc_9v1d87se3',
       'doc_nsxfmaf07',
-      'doc_rn7x29c0o'
+      'doc_rn7x29c0o',
+      'doc_ymzsioywq'
     ]);
-    let needsSanitizeSave = false;
-    const isSanitizedV18 = typeof localStorage !== 'undefined' && localStorage.getItem('boveda_v18_tombstones_sanitized') === 'true';
 
     try {
       if (typeof localStorage !== 'undefined') {
@@ -133,12 +122,7 @@ class VaultStorage {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             parsed.forEach(id => {
-              if (!id) return;
-              if (!isSanitizedV18 && canonicalProtectedIds.has(id)) {
-                needsSanitizeSave = true;
-                return;
-              }
-              ids.add(id);
+              if (id) ids.add(id);
             });
           }
         }
@@ -148,32 +132,11 @@ class VaultStorage {
       const saved = await this.getSetting('deletedDocIds');
       if (Array.isArray(saved)) {
         saved.forEach(id => {
-          if (!id) return;
-          if (!isSanitizedV18 && canonicalProtectedIds.has(id)) {
-            needsSanitizeSave = true;
-            return;
-          }
-          ids.add(id);
+          if (id) ids.add(id);
         });
       }
     } catch (e) {}
 
-    if (!isSanitizedV18) {
-      try {
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('boveda_v17_tombstones_sanitized', 'true');
-          localStorage.setItem('boveda_v18_tombstones_sanitized', 'true');
-          if (needsSanitizeSave) {
-            localStorage.setItem('boveda_deleted_doc_ids', JSON.stringify(Array.from(ids)));
-          }
-        }
-      } catch (e) {}
-      if (needsSanitizeSave) {
-        try {
-          await this.setSetting('deletedDocIds', Array.from(ids));
-        } catch (e) {}
-      }
-    }
     return Array.from(ids);
   }
 
@@ -290,16 +253,16 @@ class VaultStorage {
         });
         mergedCount++;
       }
-      // Spec 015: Eliminar de IndexedDB cualquier copia local redundante con distinto ID pero mismo (category, title) que el documento de la nube
+      // Spec 015 & 017: Eliminar de IndexedDB cualquier copia local redundante con distinto ID pero mismo (category, title) que el documento de la nube con tombstone
       const cloudCat = String(doc.category || 'identidad').trim().toLowerCase();
-      const cloudTitle = String(doc.title || '').trim().toLowerCase();
+      const cloudTitle = String(doc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
       for (const localDoc of existingAll) {
         if (localDoc && localDoc.id && localDoc.id !== doc.id) {
           const localCat = String(localDoc.category || 'identidad').trim().toLowerCase();
-          const localTitle = String(localDoc.title || '').trim().toLowerCase();
+          const localTitle = String(localDoc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
           if (localCat === cloudCat && localTitle === cloudTitle) {
             try {
-              await this.deleteDocument(localDoc.id, false);
+              await this.deleteDocument(localDoc.id, true);
             } catch (e) {}
           }
         }

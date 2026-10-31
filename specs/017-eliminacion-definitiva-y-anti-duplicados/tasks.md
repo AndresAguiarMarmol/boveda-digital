@@ -1,0 +1,22 @@
+# Tareas: Spec 017 — Eliminación Definitiva y Prevención Total de Duplicados
+
+- [x] **1. Modificar `assets/js/storage.js`:**
+  - [x] Remover `canonicalProtectedIds` que filtraba IDs de `getDeletedIds()`.
+  - [x] Asegurar que `mergeCloudDocuments()` registre tombstones (`deleteDocument(id, true)`) al purgar réplicas con mismo título/categoría.
+- [x] **2. Modificar `assets/js/app.js`:**
+  - [x] Blindar `handleDeleteSelectedDocument()` con cerrojos `_isDeletingDoc` y `_isSyncingWithCloud`.
+  - [x] Purgar documento seleccionado y cualquier gemelo/réplica por título normalizado en IndexedDB con tombstone y en el array de memoria.
+  - [x] Enviar `DELETE /api/v1/documents/:id` para todos los IDs purgados.
+  - [x] Normalizar deduplicación en `loadAndRenderDocuments()` eliminando `canonicalIds` estático.
+  - [x] Prevenir regeneración de demos en `loadAndRenderDocuments()`.
+- [x] **3. Modificar `server.js`:**
+  - [x] En `DELETE /api/v1/documents/:id`, eliminar por ID y también purgar cualquier duplicado con categoría y título idéntico normalizado, registrando en `db.deletedIds`.
+- [x] **4. Incrementar Versión de Caché / Service Worker:**
+  - [x] Actualizar `CACHE_NAME = 'boveda-digital-v21'` en `sw.js`.
+  - [x] Actualizar query strings `?v=21` en `index.html`.
+- [x] **5. Pruebas y Verificación:**
+  - [x] Escribir pruebas unitarias para Spec 017 en `tests/boveda.test.js` y `tests/server.test.js`.
+  - [x] Ejecutar suite completa con `node --test` (68/68 pruebas pasando en verde).
+- [x] **6. Documentación y Entrega:**
+  - [x] Actualizar `memory.md`.
+  - [ ] Commit y push a GitHub.

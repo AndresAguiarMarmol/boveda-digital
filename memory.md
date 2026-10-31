@@ -123,6 +123,21 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-31 — Spec 017: Eliminación Definitiva de Expedientes y Prevención Total de Duplicados (v21)
+- **Diagnóstico de Causa Raíz de Duplicación al Eliminar:**
+  - *Causa 1 (Condición de carrera asíncrona tras confirm()):* Al abrir el diálogo nativo `confirm()` en `handleDeleteSelectedDocument()`, la ventana perdía el foco; al pulsar Aceptar, el evento `window.onfocus` y `visibilitychange` disparaban `triggerReactiveCloudSync()` (`syncWithCloud(true)`) en paralelo. Dicha sincronización leía IndexedDB antes de completarse el borrado y bloqueaba con cerrojo el sync post-borrado, descargando o re-subiendo documentos obsoletos.
+  - *Causa 2 (Gemelos o réplicas residuales con distinto ID):* Al borrar una tarjeta, sólo se eliminaba su `docId` puntual; cualquier réplica oculta en IndexedDB quedaba viva y reaparecía de inmediato en la pantalla o se reenviaba a Cloud Run en `batch-sync`.
+  - *Causa 3 (Bloqueo en getDeletedIds()):* `canonicalProtectedIds` filtraba tombstones de documentos canónicos impidiendo su registro efectivo en `deletedIds` en ciertos clientes.
+  - *Causa 4 (Regeneración de demos):* `_seedInitialDemoDocuments()` se disparaba si la bóveda local quedaba vacía antes de sincronizar con la nube.
+- **Corrección Quirúrgica (`assets/js/app.js`, `assets/js/storage.js`, `server.js`):**
+  - En `BovedaApp.handleDeleteSelectedDocument()`: cerrojo estricto `_isDeletingDoc` y `_isSyncingWithCloud` para neutralizar `focus`/`visibilitychange`; identificación y purga simultánea en IndexedDB y memoria de cualquier réplica que comparta categoría y título normalizado (`replace(/\s+/g, ' ')`), con registro de tombstone (`deleteDocument(id, true)`); despacho de `DELETE /api/v1/documents/:id` para todos los IDs afectados; y refresco directo de la interfaz antes de sincronizar.
+  - En `BovedaApp.triggerReactiveCloudSync()`: bloqueo de sincronización automática si `_isDeletingDoc` o `_isSyncingWithCloud` están activos.
+  - En `BovedaApp.loadAndRenderDocuments()`: retirado el conjunto `canonicalIds` estático; deduplicación robusta con tombstone (`deleteDocument(redundantDoc.id, true)`) y eliminación remota; y bloqueo de `_seedInitialDemoDocuments` para cuentas con titular registrado.
+  - En `VaultStorage.getDeletedIds()` y `mergeCloudDocuments()` (`assets/js/storage.js`): removido `canonicalProtectedIds` para permitir el borrado de cualquier ID solicitado por el usuario y purga de réplicas locales con registro de tombstone.
+  - En `server.js` (`DELETE /api/v1/documents/:id`): purga atómica del documento por ID y de cualquier réplica huérfana con idéntica categoría y título normalizado, registrando todos en `db.deletedIds`.
+- **Service Worker v21 (`sw.js`, `index.html`, `tests/boveda.test.js`):**
+  - Incrementado `CACHE_NAME` a `'boveda-digital-v21'` y `?v=21` en `index.html`. **68/68 pruebas pasando al 100% en verde**.
+
 ### 2026-10-30 — Spec 016: Integración de la Skill `archivar-documentos` (Motor OCR y Nomenclatura Google Drive — `v20`)
 - **Motor Documental OCR en [`assets/js/gdrive.js`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/assets/js/gdrive.js):**
   - Implementadas las funciones `procesarTextoOCRParaDrive(ocrText, opciones)` y `normalizarSegmentoDrive(str)`, además del método `VaultGoogleDrive.prototype.procesarTextoOCR()`, cumpliendo las 4 reglas de [`.agents/skills/sdd/SKILL.md`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/.agents/skills/sdd/SKILL.md): fechas ISO-8601 (`YYYY-MM-DD`), montos limpios (`CLP | USD | EUR`), jerarquía Drive (`Documentos/[YYYY]/[Categoria]/[Emisor]`) y nomenclatura sin tildes ni espacios (`YYYY-MM-DD_[Categoria]_[Emisor]_[Folio].[ext]`).

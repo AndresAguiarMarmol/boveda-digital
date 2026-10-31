@@ -305,7 +305,8 @@ class BovedaApp {
                                (await window.vaultStorage.getSetting('boveda_demos_seeded')) === true;
     const deletedIdsList = typeof window.vaultStorage.getDeletedIds === 'function' ? await window.vaultStorage.getDeletedIds() : [];
     const anyDemoDeleted = deletedIdsList.some(id => String(id).startsWith('doc_demo_'));
-    if (rawDocs.length === 0 && !demosAlreadySeeded && !anyDemoDeleted) {
+    const isCloudAccount = user && (user.sub === 'usr_pro_001' || user.email === 'andres.pro@boveda.com' || user.email === 'andres.aguiar.marmol@gmail.com');
+    if (rawDocs.length === 0 && !demosAlreadySeeded && !anyDemoDeleted && !isCloudAccount) {
       await this._seedInitialDemoDocuments(user.sub);
       rawDocs = await window.vaultStorage.getAllDocuments(user.sub);
     }
@@ -415,40 +416,36 @@ class BovedaApp {
       }
     }
 
-    // Spec 015: Deduplicación atómica por ID y por (category, title, doc_number) + limpieza de copias redundantes en IndexedDB
-    const canonicalIds = new Set([
-      'doc_huzcvq2ff',
-      'doc_ekd0onmfw',
-      'doc_ps25oua80',
-      'doc_9lskrlugo',
-      'doc_yjdulku41',
-      'doc_kzs5fj88v',
-      'doc_rehd8z4vp',
-      'doc_teu75glli',
-      'doc_vqp0qhkbm',
-      'doc_a7fmu6aij',
-      'doc_y56couzw3'
-    ]);
+    // Spec 015 & 017: Deduplicación atómica por ID y por (category, title) + limpieza de copias redundantes en IndexedDB con tombstone
     const seenIds = new Set();
     const seenByKey = new Map();
     for (const doc of unlockedList) {
       if (!doc || !doc.id || seenIds.has(doc.id)) continue;
       seenIds.add(doc.id);
-      const dedupKey = `${String(doc.category || 'identidad').trim().toLowerCase()}|${String(doc.title || '').trim().toLowerCase()}|${String(doc.doc_number || '').trim().toLowerCase()}`;
+      const normCat = String(doc.category || 'identidad').trim().toLowerCase();
+      const normTitle = String(doc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const normDocNum = String(doc.doc_number || '').trim().toLowerCase().replace(/[\s\.\-]+/g, '');
+      const dedupKey = normDocNum ? `${normCat}|${normTitle}|${normDocNum}` : `${normCat}|${normTitle}`;
+
       if (!seenByKey.has(dedupKey)) {
         seenByKey.set(dedupKey, doc);
       } else {
         const prev = seenByKey.get(dedupKey);
-        const keepNew = canonicalIds.has(doc.id) && !canonicalIds.has(prev.id);
-        const redundantDoc = keepNew ? prev : doc;
-        if (keepNew) {
-          seenByKey.set(dedupKey, doc);
-        }
-        if (!canonicalIds.has(redundantDoc.id)) {
-          try {
-            await window.vaultStorage.deleteDocument(redundantDoc.id, false);
-          } catch (e) {}
-        }
+        const isNewer = new Date(doc.updated_at || 0).getTime() > new Date(prev.updated_at || 0).getTime();
+        const docToKeep = isNewer ? doc : prev;
+        const redundantDoc = isNewer ? prev : doc;
+        seenByKey.set(dedupKey, docToKeep);
+
+        // Purgar de IndexedDB y registrar tombstone para evitar reaparición
+        try {
+          await window.vaultStorage.deleteDocument(redundantDoc.id, true);
+          if (window.vaultAuth && window.vaultAuth.accessToken) {
+            fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${redundantDoc.id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
+            }).catch(() => null);
+          }
+        } catch (e) {}
       }
     }
 
@@ -2064,48 +2061,106 @@ class BovedaApp {
   }
 
   /**
-   * Elimina un documento permanentemente con confirmación de seguridad
+   * Elimina un documento permanentemente con confirmación de seguridad y protección anti-duplicados (Spec 017)
    */
   async handleDeleteSelectedDocument() {
     if (!this.selectedDoc) return;
-    if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente el documento "${this.selectedDoc.title}" de tu bóveda? Esta acción no se puede deshacer.`)) return;
+    const targetDoc = this.selectedDoc;
+    const docTitle = targetDoc.title || 'este documento';
+    if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente el documento "${docTitle}" de tu bóveda? Esta acción no se puede deshacer.`)) return;
 
-    const docId = this.selectedDoc.id;
-    if (String(docId).startsWith('doc_demo_')) {
+    if (this._isDeletingDoc) return;
+    this._isDeletingDoc = true;
+    this._isSyncingWithCloud = true; // Bloquea syncs concurrentes disparados por focus/visibilitychange al cerrar confirm()
+
+    try {
+      const docId = targetDoc.id;
+      const targetCat = String(targetDoc.category || 'identidad').trim().toLowerCase();
+      const targetTitle = String(targetDoc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+      // Prevenir re-sembrado de demos
+      if (String(docId).startsWith('doc_demo_') || targetCat.startsWith('doc_demo_')) {
+        try {
+          if (typeof localStorage !== 'undefined') localStorage.setItem('boveda_demos_seeded', 'true');
+        } catch (e) {}
+        await window.vaultStorage.setSetting('boveda_demos_seeded', true);
+      }
+
+      // Encontrar todos los IDs de este documento o copias redundantes con la misma categoría y título
+      const idsToDelete = new Set([docId]);
+
+      // Buscar en memoria
+      if (Array.isArray(this.unlockedDocuments)) {
+        for (const d of this.unlockedDocuments) {
+          if (!d || !d.id) continue;
+          const dCat = String(d.category || 'identidad').trim().toLowerCase();
+          const dTitle = String(d.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (d.id === docId || (dCat === targetCat && dTitle === targetTitle)) {
+            idsToDelete.add(d.id);
+          }
+        }
+      }
+
+      // Buscar en IndexedDB
       try {
-        if (typeof localStorage !== 'undefined') localStorage.setItem('boveda_demos_seeded', 'true');
-      } catch (e) {}
-      await window.vaultStorage.setSetting('boveda_demos_seeded', true);
-    }
-
-    await window.vaultStorage.deleteDocument(docId, true);
-    await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_DELETED', { docId });
-
-    document.getElementById('modal-doc-detail').close();
-    this.showToast('Documento eliminado de la gaveta.', 'success');
-    await this.loadAndRenderDocuments(true);
-
-    // Eliminar también en la nube esperando confirmación antes de sincronizar (evita resurrección por condición de carrera)
-    if (window.vaultAuth.accessToken) {
-      try {
-        let delRes = await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${docId}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
-        }).catch(() => null);
-        if (delRes && delRes.status === 401) {
-          const refreshed = await window.vaultAuth.refreshSession();
-          if (refreshed) {
-            await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${docId}`, {
-              method: 'DELETE',
-              headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
-            }).catch(() => null);
+        const localAll = await window.vaultStorage.getAllDocuments();
+        for (const d of localAll) {
+          if (!d || !d.id) continue;
+          const dCat = String(d.category || 'identidad').trim().toLowerCase();
+          const dTitle = String(d.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (d.id === docId || (dCat === targetCat && dTitle === targetTitle)) {
+            idsToDelete.add(d.id);
           }
         }
       } catch (e) {}
+
+      // Eliminar de IndexedDB con tombstone para cada ID
+      for (const id of idsToDelete) {
+        await window.vaultStorage.deleteDocument(id, true);
+        await window.vaultStorage.logAuditEvent(window.vaultAuth?.currentUser?.sub || 'usr_pro_001', 'DOC_DELETED', { docId: id });
+      }
+
+      // Purgar inmediatamente de memoria
+      this.unlockedDocuments = (this.unlockedDocuments || []).filter(d => !idsToDelete.has(d.id));
+
+      const modalDetail = document.getElementById('modal-doc-detail');
+      if (modalDetail && typeof modalDetail.close === 'function') modalDetail.close();
+      this.showToast('Documento eliminado permanentemente.', 'success');
+
+      // Refrescar métricas y archivador de inmediato
+      this.renderMetrics();
+      this.renderCabinet();
+
+      // Eliminar en la nube para todos los IDs afectados
+      if (window.vaultAuth && window.vaultAuth.accessToken) {
+        for (const id of idsToDelete) {
+          try {
+            let delRes = await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
+            }).catch(() => null);
+            if (delRes && delRes.status === 401) {
+              const refreshed = await window.vaultAuth.refreshSession();
+              if (refreshed) {
+                await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents/${id}`, {
+                  method: 'DELETE',
+                  headers: { 'Authorization': `Bearer ${window.vaultAuth.accessToken}` }
+                }).catch(() => null);
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      this.selectedDoc = null;
+      window.vaultGoogleDrive?.triggerAutoSync(window.vaultAuth?.currentUser?.sub || 'usr_pro_001', 'doc_deleted');
+    } finally {
+      this._isDeletingDoc = false;
+      this._isSyncingWithCloud = false;
     }
 
+    // Sincronizar limpiamente con la nube una vez finalizado el borrado
     await this.syncWithCloud(true);
-    window.vaultGoogleDrive?.triggerAutoSync(window.vaultAuth.currentUser.sub, 'doc_deleted');
   }
 
   /**
@@ -3338,8 +3393,9 @@ class BovedaApp {
       });
     }
 
-    // Spec 012: Sincronización automática reactiva entre dispositivos (PC ↔ Celular) al enfocar o recuperar red
+    // Spec 012 & 017: Sincronización automática reactiva entre dispositivos (PC ↔ Celular) al enfocar o recuperar red
     const triggerReactiveCloudSync = () => {
+      if (this._isDeletingDoc || this._isSyncingWithCloud) return;
       const now = Date.now();
       if (this._lastReactiveSync && (now - this._lastReactiveSync) < 4000) return;
       this._lastReactiveSync = now;

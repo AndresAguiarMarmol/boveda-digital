@@ -1271,17 +1271,43 @@ test('SDD 012, 013, 014 & 015: Unificación Multi-Dispositivo, Deduplicación At
   assert.ok(!cloudJson.deletedIds.includes('doc_huzcvq2ff'), 'vault_cloud.json NO debe incluir expedientes reales en deletedIds');
   assert.ok(cloudJson.customDrawers && cloudJson.customDrawers.usr_pro_001 && cloudJson.customDrawers.usr_pro_001.gaveta_documentos_registrad_m6ses, 'vault_cloud.json debe preservar la gaveta personalizada Documentos Registrados');
 
-  // 4. Spec 013, 014 & 015: Carga atómica (_loadRenderSeq), cerrojo _isSyncingWithCloud y rechazo de "Documento Restaurado"
+  // 4. Spec 013, 014, 015 & 017: Carga atómica (_loadRenderSeq), cerrojos de concurrencia y rechazo de "Documento Restaurado"
   assert.ok(!appJs.includes('deleteDocument(zombieId'), 'app.js NO debe auto-eliminar registros en loadAndRenderDocuments');
   assert.ok(appJs.includes('_loadRenderSeq'), 'app.js debe usar secuencia atómica _loadRenderSeq en loadAndRenderDocuments');
   assert.ok(appJs.includes('_isSyncingWithCloud'), 'app.js debe usar cerrojo _isSyncingWithCloud en syncWithCloud');
-  assert.ok(storageJs.includes('boveda_v18_tombstones_sanitized'), 'storage.js debe sanear tombstones');
-  assert.ok(storageJs.includes('canonicalProtectedIds'), 'storage.js debe proteger los 11 expedientes canónicos');
   const { esPayloadCifradoValido } = require('../assets/js/storage.js');
   assert.equal(esPayloadCifradoValido({ id: 'doc_test', title: 'Documento Restaurado', category: 'general', encrypted_payload: 'ABCD' }), false, 'esPayloadCifradoValido debe rechazar registros corruptos Documento Restaurado');
 
   // 5. Service Worker v19 o superior
-  assert.ok(/boveda-digital-v(19|20)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o v20');
+  assert.ok(/boveda-digital-v(19|20|21)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19, v20 o v21');
+});
+
+test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de réplicas sin duplicación', () => {
+  const rootDir = path.join(__dirname, '..');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const storageJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'storage.js'), 'utf8');
+  const serverJs = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+
+  // 1. handleDeleteSelectedDocument debe activar cerrojos _isDeletingDoc y _isSyncingWithCloud
+  assert.ok(appJs.includes('this._isDeletingDoc = true'), 'app.js debe activar _isDeletingDoc en handleDeleteSelectedDocument');
+  assert.ok(appJs.includes('this._isSyncingWithCloud = true'), 'app.js debe activar _isSyncingWithCloud para bloquear syncs de focus/visibilitychange');
+  assert.ok(appJs.includes('idsToDelete.add(d.id)'), 'app.js debe encontrar y purgar réplicas con la misma categoría y título');
+
+  // 2. triggerReactiveCloudSync debe respetar los cerrojos
+  assert.ok(appJs.includes('this._isDeletingDoc || this._isSyncingWithCloud'), 'triggerReactiveCloudSync debe ignorar eventos si hay eliminación o sync en curso');
+
+  // 3. mergeCloudDocuments y deduplicación en app.js deben registrar tombstones (true)
+  assert.ok(storageJs.includes('await this.deleteDocument(localDoc.id, true)'), 'storage.js debe purgar réplicas registrando tombstone');
+  assert.ok(appJs.includes('await window.vaultStorage.deleteDocument(redundantDoc.id, true)'), 'loadAndRenderDocuments debe eliminar duplicados con tombstone');
+
+  // 4. server.js debe purgar réplicas con categoría y título idéntico en DELETE /api/v1/documents/:id
+  assert.ok(serverJs.includes('// Spec 017: Purgar también cualquier duplicado huérfano con la misma categoría y título'), 'server.js debe purgar duplicados con misma categoría y título al eliminar');
+
+  // 5. Service Worker v21 y cache busting en index.html
+  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v21'"), 'sw.js debe operar bajo boveda-digital-v21');
+  assert.ok(html.includes('app.js?v=21'), 'index.html debe cargar app.js con ?v=21');
 });
 
 test('SDD 016: Motor OCR archivar-documentos (SKILL.md) extrae metadatos y normaliza nombre_archivo y ruta_drive', () => {

@@ -9,4 +9,4 @@
 - [x] 7. Agregar pruebas automatizadas en `tests/boveda.test.js` y `tests/server.test.js` para verificar la resiliencia en celular y des-tombstoneo en `mergeCloudDocuments`.
 - [x] 8. Ejecutar suite de pruebas completa y verificar 100% de éxito.
 - [x] 9. Actualizar `memory.md` documentando la especificación 019.
-- [x] 10. Commit, push a GitHub (`main`) y despliegue a Google Cloud Run.
+- [ ] 10. Commit, push a GitHub (`main`) y despliegue a Google Cloud Run.

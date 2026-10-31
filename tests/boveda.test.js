@@ -1484,6 +1484,58 @@ test('SDD 020: Paridad total PC-iPhone (15 expedientes reales) y erradicación d
   assert.ok(cloudJson.documents.usr_pro_001.some(d => d.id === 'doc_ymzsioywq'), 'vault_cloud.json debe contener doc_ymzsioywq');
 });
 
+test('SDD 021: Descifrado resiliente de adjuntos con sales históricas y auto-migración', async () => {
+  const rootDir = path.join(__dirname, '..');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+
+  // 1. Validar presencia de decryptAttachmentWithFallback en app.js
+  assert.ok(appJs.includes('async decryptAttachmentWithFallback(doc)'), 'app.js debe definir decryptAttachmentWithFallback');
+  assert.ok(appJs.includes('this.decryptAttachmentWithFallback(doc)'), 'app.js debe invocar decryptAttachmentWithFallback en openDocumentDetail y downloadDecryptedAttachment');
+
+  // 2. Validar soporte de fallback multi-sal y auto-migración en submitBackupPinUnlock
+  assert.ok(appJs.includes('Spec 021: Si el adjunto está cifrado con una clave histórica'), 'submitBackupPinUnlock debe incluir re-cifrado de adjunto con activeMasterKey');
+
+  // 3. Validar que en data/vault_cloud.json los 15 expedientes con adjunto descifran con la sal unificada MASTER_CRYPTO_SALT
+  const crypto = require('crypto');
+  const { subtle } = crypto.webcrypto;
+  const cloudJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'data', 'vault_cloud.json'), 'utf8'));
+
+  async function deriveKey(pin, saltHex) {
+    const enc = new TextEncoder();
+    const saltBuf = Buffer.from(saltHex, 'hex');
+    const baseKey = await subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveKey']);
+    return subtle.deriveKey(
+      { name: 'PBKDF2', salt: saltBuf, iterations: 100000, hash: 'SHA-256' },
+      baseKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  async function decrypt(key, ciphertextB64, ivB64) {
+    const ct = Buffer.from(ciphertextB64, 'base64');
+    const iv = Buffer.from(ivB64, 'base64');
+    return subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  }
+
+  const activeKey = await deriveKey('123456', '226000658459336d4184642799fc8498');
+  const docs = cloudJson.documents.usr_pro_001;
+  let attachmentsTested = 0;
+
+  for (const doc of docs) {
+    const decBuf = await decrypt(activeKey, doc.encrypted_payload, doc.iv);
+    const plain = JSON.parse(new TextDecoder().decode(decBuf));
+    if (plain.attachment && plain.attachment.ciphertext) {
+      await decrypt(activeKey, plain.attachment.ciphertext, plain.attachment.iv);
+      attachmentsTested++;
+    }
+  }
+
+  assert.ok(attachmentsTested >= 10, 'Al menos 10 documentos deben tener adjuntos válidos y descifrables con MASTER_CRYPTO_SALT');
+});
+
+
 
 
 

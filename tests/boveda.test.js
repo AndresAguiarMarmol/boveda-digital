@@ -1261,9 +1261,9 @@ test('SDD 012, 013, 014 & 015: Unificación Multi-Dispositivo, Deduplicación At
   assert.ok(serverJs.includes('function decodeJWTWithoutExpiry('), 'server.js debe implementar decodeJWTWithoutExpiry para refresh');
   assert.ok(serverJs.includes('INITIAL_PURGED_DOC_IDS'), 'server.js debe purgar los documentos demo y duplicados históricos');
 
-  // 3. data/vault_cloud.json debe contener los 11 expedientes personales reales en usr_pro_001 sin registros demo ni "Documento Restaurado"
+  // 3. data/vault_cloud.json debe contener los 15 expedientes personales reales en usr_pro_001 sin registros demo ni "Documento Restaurado"
   assert.ok(Array.isArray(cloudJson.documents.usr_pro_001), 'vault_cloud.json debe contener la colección unificada usr_pro_001');
-  assert.equal(cloudJson.documents.usr_pro_001.length, 11, 'vault_cloud.json debe consolidar los 11 expedientes personales reales del titular');
+  assert.ok(cloudJson.documents.usr_pro_001.length >= 11, 'vault_cloud.json debe consolidar los expedientes personales reales del titular');
   assert.ok(!cloudJson.documents.usr_pro_001.some(d => String(d.id).startsWith('doc_demo_')), 'vault_cloud.json NO debe incluir los 3 documentos demo eliminados');
   assert.ok(!cloudJson.documents.usr_pro_001.some(d => d.title === 'Documento Restaurado'), 'vault_cloud.json NO debe contener registros corruptos Documento Restaurado');
   assert.ok(Array.isArray(cloudJson.deletedIds) && cloudJson.deletedIds.includes('doc_demo_pasaporte'), 'vault_cloud.json debe registrar los demos eliminados en deletedIds');
@@ -1279,7 +1279,7 @@ test('SDD 012, 013, 014 & 015: Unificación Multi-Dispositivo, Deduplicación At
   assert.equal(esPayloadCifradoValido({ id: 'doc_test', title: 'Documento Restaurado', category: 'general', encrypted_payload: 'ABCD' }), false, 'esPayloadCifradoValido debe rechazar registros corruptos Documento Restaurado');
 
   // 5. Service Worker v19 o superior
-  assert.ok(/boveda-digital-v(19|20|21|22|23)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o superior');
+  assert.ok(/boveda-digital-v(19|20|21|22|23|24)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o superior');
 });
 
 test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de réplicas sin duplicación', () => {
@@ -1306,8 +1306,8 @@ test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de ré
   assert.ok(serverJs.includes('// Spec 017: Purgar también cualquier duplicado huérfano con la misma categoría y título'), 'server.js debe purgar duplicados con misma categoría y título al eliminar');
 
   // 5. Service Worker v21 o superior y cache busting en index.html
-  assert.ok(/boveda-digital-v(21|22|23)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v21 o superior');
-  assert.ok(/app\.js\?v=(21|22|23)/.test(html), 'index.html debe cargar app.js con ?v=21 o superior');
+  assert.ok(/boveda-digital-v(21|22|23|24)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v21 o superior');
+  assert.ok(/app\.js\?v=(21|22|23|24)/.test(html), 'index.html debe cargar app.js con ?v=21 o superior');
 });
 
 test('SDD 016: Motor OCR archivar-documentos (SKILL.md) extrae metadatos y normaliza nombre_archivo y ruta_drive', () => {
@@ -1457,12 +1457,33 @@ test('SDD 019: Resiliencia de sincronización en celular, des-tombstone automát
   assert.ok(authJs.includes('8000'), 'auth.js debe tener timeout de al menos 8000ms en checkServerConnection');
   assert.ok(appJs.includes('8000'), 'app.js debe tener timeout de al menos 8000ms en testCloudConnection');
 
-  // 4. Service Worker v23 y cache busting en index.html
+  // 4. Service Worker v24 y cache busting en index.html
   const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
-  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v23'"), 'sw.js debe operar bajo boveda-digital-v23');
-  assert.ok(html.includes('app.js?v=23'), 'index.html debe cargar app.js con ?v=23');
+  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v24'"), 'sw.js debe operar bajo boveda-digital-v24');
+  assert.ok(html.includes('app.js?v=24'), 'index.html debe cargar app.js con ?v=24');
 });
+
+test('SDD 020: Paridad total PC-iPhone (15 expedientes reales) y erradicación de doc_ymzsioywq de tombstones', async () => {
+  const rootDir = path.join(__dirname, '..');
+  const storageJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'storage.js'), 'utf8');
+  const cloudJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'data', 'vault_cloud.json'), 'utf8'));
+
+  // 1. storage.js getDeletedIds NO debe contener doc_ymzsioywq en su lista de IDs eliminados por defecto
+  const { VaultStorage } = require('../assets/js/storage.js');
+  const vs = new VaultStorage();
+  vs.getSetting = async (k) => null;
+  vs.setSetting = async (k, v) => true;
+
+  const deletedList = await vs.getDeletedIds();
+  assert.ok(!deletedList.includes('doc_ymzsioywq'), 'doc_ymzsioywq (Residencia Definitiva Chile AEAM) NO debe estar en getDeletedIds()');
+
+  // 2. data/vault_cloud.json debe tener los 15 expedientes y NO tener doc_ymzsioywq en deletedIds
+  assert.equal(cloudJson.documents.usr_pro_001.length, 15, 'vault_cloud.json debe contener exactamente los 15 expedientes');
+  assert.ok(!cloudJson.deletedIds.includes('doc_ymzsioywq'), 'vault_cloud.json deletedIds NO debe incluir doc_ymzsioywq');
+  assert.ok(cloudJson.documents.usr_pro_001.some(d => d.id === 'doc_ymzsioywq'), 'vault_cloud.json debe contener doc_ymzsioywq');
+});
+
 
 
 

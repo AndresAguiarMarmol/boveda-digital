@@ -49,3 +49,4 @@ sequenceDiagram
 1. `sw.js`: Bump a `boveda-digital-v23`.
 2. `index.html`: Bump `?v=23` en todas las referencias de scripts.
 3. `tests/boveda.test.js` y `tests/server.test.js`: Pruebas automatizadas de des-tombstoneo en `mergeCloudDocuments` y blindaje de `INITIAL_PURGED_DOC_IDS`.
+

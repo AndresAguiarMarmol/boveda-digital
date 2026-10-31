@@ -123,6 +123,16 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 3. Historial de cambios
 
+### 2026-10-31 — Spec 020: Paridad Total PC-iPhone (15 Expedientes) y Erradicación de Tombstone `doc_ymzsioywq` (v24)
+- **Diagnóstico de Causa Raíz de Divergencia (PC = 15 docs vs iPhone = 14 docs):**
+  - *Causa 1 (Lápida estática errónea de `doc_ymzsioywq` en `storage.js`):* El expediente `doc_ymzsioywq` ("Residencia Definitiva Chile AEAM") fue incluido indebidamente en el conjunto por defecto de `getDeletedIds()` en `assets/js/storage.js` durante una refactorización de purga de pruebas. En la PC, el usuario había importado un respaldo que lo des-tombstoneó en `boveda_undeleted_doc_ids` de `localStorage`, mostrando los 15 documentos. En el iPhone (que no importó ese respaldo y sincroniza vía Cloud Run), `deletedSet.has('doc_ymzsioywq')` era `true`, por lo que `getAllDocuments()` lo ocultaba y `mergeCloudDocuments()` lo saltaba (`if (deletedSet.has(doc.id)) continue;`), dejando el conteo en 14.
+  - *Causa 2 (Desfase de `data/vault_cloud.json` local):* El archivo JSON en disco mantenía solo 11 documentos y retenía `doc_ymzsioywq` en su lista `deletedIds`.
+- **Corrección Quirúrgica (`assets/js/storage.js`, `data/vault_cloud.json`, `sw.js`, `index.html`, `tests/boveda.test.js`):**
+  - En `assets/js/storage.js`: erradicado `doc_ymzsioywq` del conjunto fijo de `getDeletedIds()`; implementado auto-saneamiento reactivo que purga `doc_ymzsioywq` de `localStorage` y del almacén `settings` e inmuniza con `unDeleted.add('doc_ymzsioywq')`; y blindado `mergeCloudDocuments()` para calcular `deletedSet` filtrando `!activeSet.has(id)`, garantizando que ningún expediente activo entregado por la nube pueda ser saltado ni eliminado localmente.
+  - En `data/vault_cloud.json`: sincronizados los 15 expedientes reales completos desde Cloud Run y purgado `doc_ymzsioywq` de `deletedIds`.
+  - En `sw.js` e `index.html`: actualizado `CACHE_NAME` a `'boveda-digital-v24'` y query string a `?v=24` en todos los scripts de la app.
+  - En `tests/boveda.test.js`: añadido test automatizado `SDD 020`. **73/73 pruebas pasando al 100% en verde**.
+
 ### 2026-10-31 — Spec 019: Resiliencia de Sincronización en Celular y Des-Tombstone Cruzado (v23)
 - **Diagnóstico de Causa Raíz de Bloqueo de Sincronización en Celular:**
   - *Causa 1 (Lápidas locales obsoletas en el celular):* Si un documento fue borrado anteriormente en el celular pero posteriormente restaurado en la PC, su ID permanecía en `boveda_deleted_doc_ids` del celular. Al sincronizar (`syncWithCloud`), `mergeCloudDocuments` evaluaba `deletedSet.has(doc.id)` usando la lista local del celular, ignorando el documento activo enviado por la nube, eliminándolo de `IndexedDB` y ocultándolo en `getAllDocuments()`.

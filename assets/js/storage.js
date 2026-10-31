@@ -111,8 +111,7 @@ class VaultStorage {
       'doc_xgcyu22gc',
       'doc_9v1d87se3',
       'doc_nsxfmaf07',
-      'doc_rn7x29c0o',
-      'doc_ymzsioywq'
+      'doc_rn7x29c0o'
     ]);
 
     try {
@@ -121,9 +120,11 @@ class VaultStorage {
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
-            parsed.forEach(id => {
-              if (id) ids.add(id);
-            });
+            const sanitized = parsed.filter(id => id && id !== 'doc_ymzsioywq');
+            if (sanitized.length !== parsed.length) {
+              localStorage.setItem('boveda_deleted_doc_ids', JSON.stringify(sanitized));
+            }
+            sanitized.forEach(id => ids.add(id));
           }
         }
       }
@@ -131,14 +132,16 @@ class VaultStorage {
     try {
       const saved = await this.getSetting('deletedDocIds');
       if (Array.isArray(saved)) {
-        saved.forEach(id => {
-          if (id) ids.add(id);
-        });
+        const sanitized = saved.filter(id => id && id !== 'doc_ymzsioywq');
+        if (sanitized.length !== saved.length) {
+          await this.setSetting('deletedDocIds', sanitized);
+        }
+        sanitized.forEach(id => ids.add(id));
       }
     } catch (e) {}
 
-    // Spec 018: Excluir IDs que han sido explícitamente restaurados / des-tombstoneados
-    const unDeleted = new Set();
+    // Spec 018 & 020: Excluir IDs que han sido explícitamente restaurados / des-tombstoneados
+    const unDeleted = new Set(['doc_ymzsioywq']);
     try {
       if (typeof localStorage !== 'undefined') {
         const rawUn = localStorage.getItem('boveda_undeleted_doc_ids');
@@ -152,6 +155,9 @@ class VaultStorage {
       const savedUn = await this.getSetting('unDeletedDocIds');
       if (Array.isArray(savedUn)) savedUn.forEach(id => unDeleted.add(id));
     } catch (e) {}
+
+    // Inmunizar doc_ymzsioywq (Residencia Definitiva Chile AEAM)
+    ids.delete('doc_ymzsioywq');
 
     return Array.from(ids).filter(id => !unDeleted.has(id));
   }
@@ -329,7 +335,8 @@ class VaultStorage {
       }
     }
     const allDeleted = await this.getDeletedIds();
-    const deletedSet = new Set(allDeleted);
+    const activeSet = new Set(incomingActiveIds);
+    const deletedSet = new Set(allDeleted.filter(id => id && !activeSet.has(id)));
     for (const delId of deletedSet) {
       if (delId) {
         try {

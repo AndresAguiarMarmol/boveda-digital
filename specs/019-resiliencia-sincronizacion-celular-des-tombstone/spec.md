@@ -35,3 +35,4 @@ El usuario reporta que su teléfono celular no sincroniza con la nube tras haber
 ### Requisito 4: Integridad de Versión y Actualización Inmediata en Dispositivos Móviles
 **CUANDO** se despliegue la versión corregida:
 **EL SISTEMA DEBE** actualizar el Service Worker a `v23` y forzar la recarga de scripts para que el navegador móvil (Safari iOS y Chrome Android) adquiera de inmediato la lógica de sincronización resiliente.
+

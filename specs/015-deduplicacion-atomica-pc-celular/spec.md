@@ -26,3 +26,4 @@ El teléfono muestra **11 documentos** (los 11 expedientes reales actualmente ac
   - En `POST /api/v1/documents/batch-sync` (`server.js`), si llega un documento con distinto `id` pero idéntico `(category, title)` a uno de los 11 expedientes ya existentes en la nube, conservar el ID canónico existente para evitar que se creen duplicados en Cloud Run.
 - **RF-04 (Actualización de Caché PWA `v19`):**
   - Actualizar `sw.js` a `boveda-digital-v19` e `index.html` a `?v=19`.
+

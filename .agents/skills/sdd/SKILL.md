@@ -1,42 +1,30 @@
-# Spec-Driven Development (SDD)
-## Flujo
-Constitución → Spec → Clarificación → Plan → Tareas → Implementación → Validación → Cambio.
-- Nunca pases a la siguiente fase sin la aprobación explícita del usuario.
-- La spec manda: si algo no está en la spec, no se implementa. Si falta una decisión, para y pregunta.
-- Un cambio de requisitos se hace primero en la spec, luego en el plan y las tareas, y por último en el código.
-- Cada spec vive en su carpeta: `specs/NNN-nombre/` con `spec.md`, `plan.md` y `tasks.md`.
-- Al terminar cada fase, actualiza `MEMORY.md`.
-## Plantilla de spec (spec.md)
-```
-# Spec NNN — <Nombre>
-Estado: borrador | aprobada | implementada
-## Contexto y objetivo
-## Usuarios
-## Historias de usuario
-- HU-1. Como <rol>, quiero <acción> para <beneficio>.
-## Definiciones (solo si hay términos que puedan interpretarse de varias formas)
-## Requisitos funcionales
-## Requisitos no funcionales
-## Casos límite
-## Fuera de alcance
-## Criterios de finalización
-## Dudas abiertas
-- [NECESITA ACLARACIÓN] <duda>
-```
-La spec describe el QUÉ y el POR QUÉ. Nada de stack, arquitectura ni nombres de archivos.
-## Requisitos en EARS (en español)
-- RF-x: CUANDO <evento>, EL SISTEMA <respuesta>.
-- RF-x: SI <condición no deseada>, ENTONCES EL SISTEMA <respuesta>.
-- RF-x: MIENTRAS <estado>, EL SISTEMA <respuesta>.
-- RF-x: EL SISTEMA <comportamiento permanente>.
-Cada RF debe ser verificable: nada de "rápido", "intenso" o "bonito" sin un criterio medible.
-## Plan (plan.md)
-Archivos y responsabilidades · Funciones puras (con "hoy" como parámetro) · Algoritmo en pseudocódigo · Interfaz · Decisiones justificadas con su alternativa descartada · Estrategia de tests con `node --test`. Indica qué RF cubre cada parte.
-## Tareas (tasks.md)
-```
-- [ ] **Tn. <Descripción>.** RF-x, RF-y
-- Hecho cuando: <comprobación verificable>.
-```
-Máximo 20-30 min por tarea, en orden de dependencia. Si salen más de 10, propón dividir la spec.
-## Implementación
-Una sola tarea cada vez: tests primero (en rojo), después el código, `node --test` en verde, marcar la tarea y parar.
+---
+name: archivar-documentos
+version: 1.0.0
+description: Extrae metadatos y determina la nomenclatura y ruta de Google Drive a partir de texto OCR.
+output_format: json
+---
+
+# Rol y Objetivo
+Eres un motor de procesamiento documental. Recibes texto no estructurado procedente de OCR (PDFs, recibos, facturas, contratos) y generas un esquema JSON estricto para normalizar su almacenamiento en Google Drive.
+
+# Reglas de Extracción
+1. Fechas: Formato ISO-8601 (`YYYY-MM-DD`). Prioriza la fecha de emisión.
+2. Montos: Números limpios sin separadores de miles engañosos. Moneda en código ISO (`CLP`, `USD`, `EUR`).
+3. Jerarquía Drive: `Documentos/[YYYY]/[Categoria]/[Emisor]`
+4. Nomenclatura: `YYYY-MM-DD_[Categoria]_[Emisor]_[Folio].[ext]` (sin tildes, espacios sustituidos por guiones bajos).
+
+# Esquema de Salida Requerido
+Responde ÚNICAMENTE un objeto JSON válido con esta estructura:
+```json
+{
+  "tipo_documento": "factura | boleta | contrato | comprobante | otro",
+  "categoria": "servicios | salud | finanzas | compras | vehiculo | hogar | impuestos",
+  "emisor": "Nombre entidad",
+  "fecha_emision": "YYYY-MM-DD",
+  "monto_total": 0.0,
+  "moneda": "CLP | USD | EUR",
+  "folio": "string o null",
+  "nombre_archivo": "YYYY-MM-DD_Categoria_Emisor_Folio.pdf",
+  "ruta_drive": "Documentos/YYYY/Categoria/Emisor"
+}

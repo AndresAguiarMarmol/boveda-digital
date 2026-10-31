@@ -1280,8 +1280,44 @@ test('SDD 012, 013, 014 & 015: Unificación Multi-Dispositivo, Deduplicación At
   const { esPayloadCifradoValido } = require('../assets/js/storage.js');
   assert.equal(esPayloadCifradoValido({ id: 'doc_test', title: 'Documento Restaurado', category: 'general', encrypted_payload: 'ABCD' }), false, 'esPayloadCifradoValido debe rechazar registros corruptos Documento Restaurado');
 
-  // 5. Service Worker v19
-  assert.ok(/boveda-digital-v19/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19');
+  // 5. Service Worker v19 o superior
+  assert.ok(/boveda-digital-v(19|20)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o v20');
+});
+
+test('SDD 016: Motor OCR archivar-documentos (SKILL.md) extrae metadatos y normaliza nombre_archivo y ruta_drive', () => {
+  const { procesarTextoOCRParaDrive } = require('../assets/js/gdrive.js');
+  const rootDir = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+
+  // Caso 1: Boleta de Servicios en CLP con fecha en español y puntos de miles
+  const ocr1 = 'ENEL DISTRIBUCIÓN CHILE S.A. - R.U.T. 96.800.570-7 - BOLETA ELECTRÓNICA Nº 45892103 - Fecha de Emisión: 28 de Octubre de 2026 - Suministro Eléctrico Santiago - Total a Pagar: $ 42.850 CLP';
+  const res1 = procesarTextoOCRParaDrive(ocr1);
+  assert.equal(res1.tipo_documento, 'boleta');
+  assert.equal(res1.categoria, 'servicios');
+  assert.equal(res1.emisor, 'ENEL DISTRIBUCION CHILE');
+  assert.equal(res1.fecha_emision, '2026-10-28');
+  assert.equal(res1.monto_total, 42850);
+  assert.equal(res1.moneda, 'CLP');
+  assert.equal(res1.folio, '45892103');
+  assert.equal(res1.nombre_archivo, '2026-10-28_servicios_ENEL_DISTRIBUCION_CHILE_45892103.pdf');
+  assert.equal(res1.ruta_drive, 'Documentos/2026/servicios/ENEL_DISTRIBUCION_CHILE');
+
+  // Caso 2: Comprobante de Salud con fecha DD/MM/YYYY
+  const ocr2 = 'CLÍNICA ALEMANA DE SANTIAGO S.A. - Comprobante de Pago de Prestación Médica - Folio #990142 - Emitido: 30/10/2026 - Consulta Especialidad Traumatología - Monto Cancelado: $65.000.-';
+  const res2 = procesarTextoOCRParaDrive(ocr2);
+  assert.equal(res2.tipo_documento, 'comprobante');
+  assert.equal(res2.categoria, 'salud');
+  assert.equal(res2.fecha_emision, '2026-10-30');
+  assert.equal(res2.monto_total, 65000);
+  assert.equal(res2.folio, '990142');
+  assert.equal(res2.nombre_archivo, '2026-10-30_salud_CLINICA_ALEMANA_DE_SANTIAGO_990142.pdf');
+  assert.equal(res2.ruta_drive, 'Documentos/2026/salud/CLINICA_ALEMANA_DE_SANTIAGO');
+
+  // Caso 3: Integración en UI (index.html y app.js)
+  assert.ok(html.includes('id="ocr-skill-assistant-panel"'), 'index.html debe incluir el panel del motor OCR archivar-documentos');
+  assert.ok(html.includes('id="input-ocr-raw-text"'), 'index.html debe incluir textarea input-ocr-raw-text');
+  assert.ok(appJs.includes('handleProcessOcrSkill('), 'app.js debe implementar handleProcessOcrSkill()');
 });
 
 

@@ -15,3 +15,4 @@
    - Consolidar los 11 expedientes activos en `data/vault_cloud.json`.
 4. **[`sw.js`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/sw.js), [`index.html`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/index.html), [`tests/boveda.test.js`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/tests/boveda.test.js) y [`memory.md`](file:///d:/Carpetas/Desarrollos/Desarrollos%20WEB/Boveda%20Digital/memory.md)**:
    - Actualizar a `boveda-digital-v19` (`?v=19`), actualizar pruebas y documentar en `memory.md`.
+

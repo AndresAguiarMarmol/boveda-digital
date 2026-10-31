@@ -1397,8 +1397,26 @@ class BovedaApp {
       const docId = existingMatch ? existingMatch.id : ('doc_' + Math.random().toString(36).substr(2, 9));
 
       let attachmentCipher = existingMatch ? (existingMatch.attachment || null) : null;
+      const extFromAttachment = (fileAttachment && fileAttachment.name && fileAttachment.name.includes('.'))
+        ? fileAttachment.name.split('.').pop().toLowerCase()
+        : 'pdf';
+
+      // Spec 016: Calcular metadatos normalizados de Google Drive (Skill: archivar-documentos)
+      let driveArchiveMeta = this._lastOcrSkillResult || null;
+      if (!driveArchiveMeta && typeof window.procesarTextoOCRParaDrive === 'function') {
+        const syntheticOcr = `${issuer || title} - ${title} - Folio #${docNumber || 'SIN_FOLIO'} - Fecha: ${issueDate || new Date().toISOString().split('T')[0]} - ${notes || ''}`;
+        driveArchiveMeta = window.procesarTextoOCRParaDrive(syntheticOcr, {
+          ext: extFromAttachment,
+          fechaFallback: issueDate || new Date().toISOString().split('T')[0]
+        });
+      }
+
       if (fileAttachment && fileAttachment.size > 0) {
         attachmentCipher = await window.vaultCrypto.encryptFile(window.vaultAuth.masterKey, fileAttachment);
+        if (driveArchiveMeta && driveArchiveMeta.nombre_archivo && attachmentCipher) {
+          attachmentCipher.driveFileName = driveArchiveMeta.nombre_archivo;
+          attachmentCipher.drivePath = driveArchiveMeta.ruta_drive;
+        }
       }
 
       const payloadToEncrypt = {
@@ -1408,8 +1426,10 @@ class BovedaApp {
         expiry_date: expiryDate,
         tags: tags,
         notes: notes,
+        drive_archive: driveArchiveMeta,
         attachment: attachmentCipher
       };
+      this._lastOcrSkillResult = null;
 
       // Cifrar metadatos y payload con AES-256-GCM
       const encryptedResult = await window.vaultCrypto.encrypt(window.vaultAuth.masterKey, payloadToEncrypt);
@@ -2706,9 +2726,100 @@ class BovedaApp {
       futureDate.setFullYear(futureDate.getFullYear() + 5);
       if (expiryInput) expiryInput.value = futureDate.toISOString().split('T')[0];
 
+      const sampleOcr = `REGISTRO CIVIL E IDENTIFICACION - Comprobante Documento Nº ${docNumInput ? docNumInput.value : 'PAS-48291032'} - Fecha de Emision: ${new Date().toISOString().split('T')[0]} - Total: $18.500 CLP`;
+      const ocrInput = document.getElementById('input-ocr-raw-text');
+      if (ocrInput && !ocrInput.value.trim()) {
+        ocrInput.value = sampleOcr;
+      }
+      if (typeof window.procesarTextoOCRParaDrive === 'function') {
+        this.handleProcessOcrSkill(ocrInput ? ocrInput.value : sampleOcr, true);
+      }
+
       this.showToast('Campos estructurados leídos automáticamente con escáner.', 'success');
       scannerOverlay.classList.add('hidden');
     }, 2800);
+  }
+
+  /**
+   * Procesa texto OCR aplicando la skill `archivar-documentos` (.agents/skills/sdd/SKILL.md)
+   * y autocompleta el formulario de Nuevo Documento + vista previa JSON de Google Drive.
+   * @param {string} [customText]
+   * @param {boolean} [silentToast=false]
+   */
+  handleProcessOcrSkill(customText = null, silentToast = false) {
+    const ocrInput = document.getElementById('input-ocr-raw-text');
+    const jsonPre = document.getElementById('ocr-skill-json-output');
+    const rawText = (customText !== null ? customText : (ocrInput ? ocrInput.value : '')).trim();
+
+    if (!rawText) {
+      this.showToast('Ingresa o pega primero el texto OCR del documento para extraer sus metadatos.', 'warning');
+      return null;
+    }
+
+    if (typeof window.procesarTextoOCRParaDrive !== 'function') {
+      this.showToast('El motor OCR archivar-documentos no está disponible.', 'danger');
+      return null;
+    }
+
+    const form = document.getElementById('form-new-doc');
+    const fileInput = form ? form.querySelector('input[name="attachment_file"]') : null;
+    const ext = (fileInput && fileInput.files && fileInput.files[0] && fileInput.files[0].name.includes('.'))
+      ? fileInput.files[0].name.split('.').pop().toLowerCase()
+      : 'pdf';
+
+    const result = window.procesarTextoOCRParaDrive(rawText, { ext });
+    this._lastOcrSkillResult = result;
+
+    if (jsonPre) {
+      jsonPre.textContent = JSON.stringify(result, null, 2);
+      jsonPre.classList.remove('hidden');
+    }
+
+    if (form) {
+      const titleInput = form.querySelector('input[name="title"]');
+      const categorySelect = document.getElementById('new-doc-category-select');
+      const docNumInput = document.getElementById('input-doc-number');
+      const issuerInput = document.getElementById('input-issuer');
+      const issueDateInput = form.querySelector('input[name="issue_date"]');
+      const notesArea = form.querySelector('textarea[name="notes"]');
+
+      const tipoCapitalized = result.tipo_documento.charAt(0).toUpperCase() + result.tipo_documento.slice(1);
+      if (titleInput && !titleInput.value.trim()) {
+        titleInput.value = `${tipoCapitalized} ${result.emisor}`.trim();
+      }
+      if (issuerInput) issuerInput.value = result.emisor;
+      if (docNumInput && result.folio) docNumInput.value = result.folio;
+      if (issueDateInput && result.fecha_emision) issueDateInput.value = result.fecha_emision;
+
+      // Mapear categoría Drive (servicios | salud | finanzas | compras | vehiculo | hogar | impuestos) a gaveta de Bóveda
+      const categoryMap = {
+        vehiculo: 'vehiculos',
+        salud: 'salud',
+        finanzas: 'finanzas',
+        impuestos: 'finanzas',
+        compras: 'finanzas',
+        hogar: 'residencia',
+        servicios: 'residencia'
+      };
+      const mappedDrawer = categoryMap[result.categoria] || 'identidad';
+      if (categorySelect && this.categories[mappedDrawer]) {
+        categorySelect.value = mappedDrawer;
+      }
+
+      if (notesArea) {
+        const driveSummary = `[Drive: ${result.ruta_drive}/${result.nombre_archivo} | Monto: ${result.monto_total} ${result.moneda}]`;
+        if (!notesArea.value.includes(result.nombre_archivo)) {
+          notesArea.value = notesArea.value.trim()
+            ? `${notesArea.value.trim()}\n${driveSummary}`
+            : driveSummary;
+        }
+      }
+    }
+
+    if (!silentToast) {
+      this.showToast(`Metadatos extraídos → ${result.ruta_drive}/${result.nombre_archivo}`, 'success');
+    }
+    return result;
   }
 
   stopCameraScanner() {

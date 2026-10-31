@@ -339,7 +339,237 @@ class VaultGoogleDrive {
     }
     return null;
   }
+
+  /**
+   * Ejecuta el motor documental de la skill `archivar-documentos` (SKILL.md)
+   * sobre texto OCR y retorna el esquema JSON normalizado para Google Drive.
+   * @param {string} ocrText
+   * @param {object} [opciones]
+   */
+  procesarTextoOCR(ocrText, opciones = {}) {
+    return procesarTextoOCRParaDrive(ocrText, opciones);
+  }
 }
 
-// Exponer instancia global
-window.vaultGoogleDrive = new VaultGoogleDrive();
+/**
+ * Elimina tildes/diacríticos y normaliza espacios a guiones bajos para rutas y nombres de archivo en Google Drive (Regla 4 SKILL.md)
+ * @param {string} str
+ * @returns {string}
+ */
+function normalizarSegmentoDrive(str = '') {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s_-]/g, ' ')
+    .trim()
+    .replace(/\s+/g, '_');
+}
+
+/**
+ * Motor de procesamiento documental (Skill: `archivar-documentos` v1.0.0 — .agents/skills/sdd/SKILL.md)
+ * Recibe texto no estructurado procedente de OCR y genera el esquema JSON estricto
+ * para normalizar su almacenamiento en Google Drive.
+ *
+ * @param {string} ocrText Texto procedente de OCR (PDF, recibo, factura, contrato, etc.)
+ * @param {object} [opciones] Opciones adicionales ({ ext: 'pdf', fechaFallback: 'YYYY-MM-DD' })
+ * @returns {{
+ *   tipo_documento: string,
+ *   categoria: string,
+ *   emisor: string,
+ *   fecha_emision: string,
+ *   monto_total: number,
+ *   moneda: string,
+ *   folio: string|null,
+ *   nombre_archivo: string,
+ *   ruta_drive: string
+ * }}
+ */
+function procesarTextoOCRParaDrive(ocrText = '', opciones = {}) {
+  const raw = String(ocrText || '').trim();
+  const lower = raw.toLowerCase();
+  const ext = String(opciones.ext || 'pdf').replace(/^\.+/, '').toLowerCase() || 'pdf';
+
+  // 1. Detectar tipo_documento: "factura | boleta | contrato | comprobante | otro"
+  let tipo_documento = 'otro';
+  if (/\bfactura\b/i.test(raw)) {
+    tipo_documento = 'factura';
+  } else if (/\bboleta\b/i.test(raw)) {
+    tipo_documento = 'boleta';
+  } else if (/\b(contrato|arriendo|alquiler|escritura|anexo)\b/i.test(raw)) {
+    tipo_documento = 'contrato';
+  } else if (/\b(comprobante|recibo|voucher|transferencia|pago|bono)\b/i.test(raw)) {
+    tipo_documento = 'comprobante';
+  }
+
+  // 2. Detectar categoria: "servicios | salud | finanzas | compras | vehiculo | hogar | impuestos"
+  let categoria = 'servicios';
+  if (/\b(clinica|hospital|medic[oa]|salud|isapre|fonasa|farmacia|consulta|laboratorio|dental|bono)\b/i.test(raw)) {
+    categoria = 'salud';
+  } else if (/\b(sii|impuesto|tesoreria|contribuciones|f29|f22|declaracion)\b/i.test(raw)) {
+    categoria = 'impuestos';
+  } else if (/\b(vehiculo|automovil|patente|permiso de circulacion|soap|licencia de conducir|revision tecnica|peaje|autopista)\b/i.test(raw)) {
+    categoria = 'vehiculo';
+  } else if (/\b(arriendo|alquiler|gasto comun|condominio|inmobiliaria|vivienda|hogar|departamento)\b/i.test(raw)) {
+    categoria = 'hogar';
+  } else if (/\b(banco|tarjeta|credito|estado de cuenta|inversion|transferencia|finanzas|hipotecario|mutuo)\b/i.test(raw)) {
+    categoria = 'finanzas';
+  } else if (/\b(enel|aguas|metrogas|movistar|entel|wom|vtr|claro|luz|agua|gas|electricidad|internet|telefonia|suministro)\b/i.test(raw)) {
+    categoria = 'servicios';
+  } else if (/\b(tienda|supermercado|retail|falabella|ripley|paris|mercado libre|compra)\b/i.test(raw)) {
+    categoria = 'compras';
+  } else if (tipo_documento === 'contrato') {
+    categoria = 'hogar';
+  } else if (tipo_documento === 'comprobante') {
+    categoria = 'finanzas';
+  }
+
+  // 3. Regla 1 — Fechas: Formato ISO-8601 (YYYY-MM-DD), priorizando fecha de emisión
+  const mesesMap = {
+    enero: '01', ene: '01',
+    febrero: '02', feb: '02',
+    marzo: '03', mar: '03',
+    abril: '04', abr: '04',
+    mayo: '05', may: '05',
+    junio: '06', jun: '06',
+    julio: '07', jul: '07',
+    agosto: '08', ago: '08',
+    septiembre: '09', setiembre: '09', sep: '09',
+    octubre: '10', oct: '10',
+    noviembre: '11', nov: '11',
+    diciembre: '12', dic: '12'
+  };
+
+  let fecha_emision = '';
+  const isoMatch = raw.match(/\b(20\d{2}|19\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])\b/);
+  const dmySlashMatch = raw.match(/\b(0?[1-9]|[12]\d|3[01])[/-](0?[1-9]|1[0-2])[/-](20\d{2}|19\d{2})\b/);
+  const textDateMatch = lower.match(/\b(0?[1-9]|[12]\d|3[01])\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s+(?:de\s+|del\s+)?(20\d{2}|19\d{2})\b/);
+
+  if (isoMatch) {
+    fecha_emision = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  } else if (textDateMatch) {
+    const dd = String(textDateMatch[1]).padStart(2, '0');
+    const mm = mesesMap[textDateMatch[2]] || '01';
+    const yyyy = textDateMatch[3];
+    fecha_emision = `${yyyy}-${mm}-${dd}`;
+  } else if (dmySlashMatch) {
+    const dd = String(dmySlashMatch[1]).padStart(2, '0');
+    const mm = String(dmySlashMatch[2]).padStart(2, '0');
+    const yyyy = dmySlashMatch[3];
+    fecha_emision = `${yyyy}-${mm}-${dd}`;
+  } else {
+    fecha_emision = opciones.fechaFallback || new Date().toISOString().split('T')[0];
+  }
+
+  // 4. Regla 2 — Moneda (CLP | USD | EUR) y Monto limpio
+  let moneda = 'CLP';
+  if (/\b(usd|us\$|dolares|d[oó]lares)\b/i.test(raw)) {
+    moneda = 'USD';
+  } else if (/\b(eur|€|euros)\b/i.test(raw)) {
+    moneda = 'EUR';
+  }
+
+  let monto_total = 0.0;
+  const montoLabeledMatch = raw.match(/(?:total(?:\s+a\s+pagar)?|monto(?:\s+total|\s+cancelado|\s+pagado)?|importe|valor|a\s+pagar)\s*[:=]?\s*(?:CLP|USD|EUR|US\$|\$|€)?\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|[0-9]+(?:[.,][0-9]{1,2})?)/i)
+    || raw.match(/(?:US\$|\$|€)\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|[0-9]{3,}(?:[.,][0-9]{1,2})?)/);
+
+  if (montoLabeledMatch && montoLabeledMatch[1]) {
+    let numStr = montoLabeledMatch[1].trim();
+    if (moneda === 'CLP') {
+      // En CLP los puntos o comas seguidos de 3 dígitos son separadores de miles
+      numStr = numStr.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(/,(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+    } else {
+      // En USD / EUR si hay puntos de miles y coma decimal o viceversa
+      if (numStr.includes(',') && numStr.includes('.')) {
+        if (numStr.lastIndexOf(',') > numStr.lastIndexOf('.')) {
+          numStr = numStr.replace(/\./g, '').replace(',', '.');
+        } else {
+          numStr = numStr.replace(/,/g, '');
+        }
+      } else if (/^\d{1,3}(\.\d{3})+$/.test(numStr)) {
+        numStr = numStr.replace(/\./g, '');
+      } else {
+        numStr = numStr.replace(',', '.');
+      }
+    }
+    const parsedMonto = parseFloat(numStr);
+    if (!Number.isNaN(parsedMonto)) {
+      monto_total = parsedMonto;
+    }
+  }
+
+  // 5. Extraer Folio
+  let folio = null;
+  const folioMatch = raw.match(/(?:folio|boleta(?:\s+electr[oó]nica)?|factura(?:\s+electr[oó]nica)?|comprobante|documento|n[º°o]|nro\.?|#)\s*(?:n[º°o]|nro\.?|#|:)?\s*([A-Z0-9-]{3,20})/i);
+  if (folioMatch && folioMatch[1]) {
+    const candidate = folioMatch[1].replace(/^-+|-+$/g, '');
+    if (/\d/.test(candidate)) {
+      folio = candidate;
+    }
+  }
+
+  // 6. Extraer Emisor
+  let emisorRaw = '';
+  const emisorLabeled = raw.match(/(?:emisor|raz[oó]n\s+social|entidad|empresa|prestador|proveedor)\s*[:=]\s*([^\n\r|-]{3,60})/i);
+  if (emisorLabeled && emisorLabeled[1]) {
+    emisorRaw = emisorLabeled[1].trim();
+  } else {
+    // Tomar el primer segmento de texto representativo antes de ' - ' o salto de línea
+    const firstChunk = raw.split(/\r?\n|\s+-\s+/)[0] || '';
+    const cleanedChunk = firstChunk
+      .replace(/\b(?:S\.?\s*A\.?|S\.?\s*P\.?\s*A\.?|LTDA\.?|E\.?\s*I\.?\s*R\.?\s*L\.?)(?=\s|\.|$)/gi, '')
+      .replace(/R\.?U\.?T\.?\s*[0-9.]+-[0-9kK]/gi, '')
+      .replace(/[.\s]+$/, '')
+      .trim();
+    if (cleanedChunk.length >= 3 && cleanedChunk.length <= 65) {
+      emisorRaw = cleanedChunk;
+    }
+  }
+  if (!emisorRaw) {
+    emisorRaw = 'Entidad Emisora';
+  }
+  // Normalizar capitalización legible sin tildes para el campo emisor y segmentos
+  const emisorClean = emisorRaw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s.&-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const year = (fecha_emision.split('-')[0] || new Date().getFullYear().toString());
+  const emisorSlug = normalizarSegmentoDrive(emisorClean) || 'Entidad_Emisora';
+  const categoriaSlug = normalizarSegmentoDrive(categoria) || 'servicios';
+  const folioSlug = normalizarSegmentoDrive(folio || 'SIN_FOLIO') || 'SIN_FOLIO';
+
+  // Regla 3: Jerarquía Drive: Documentos/[YYYY]/[Categoria]/[Emisor]
+  const ruta_drive = `Documentos/${year}/${categoriaSlug}/${emisorSlug}`;
+  // Regla 4: Nomenclatura: YYYY-MM-DD_[Categoria]_[Emisor]_[Folio].[ext]
+  const nombre_archivo = `${fecha_emision}_${categoriaSlug}_${emisorSlug}_${folioSlug}.${ext}`;
+
+  return {
+    tipo_documento,
+    categoria,
+    emisor: emisorClean,
+    fecha_emision,
+    monto_total,
+    moneda,
+    folio,
+    nombre_archivo,
+    ruta_drive
+  };
+}
+
+// Exponer instancia global en navegador
+if (typeof window !== 'undefined') {
+  window.vaultGoogleDrive = new VaultGoogleDrive();
+  window.procesarTextoOCRParaDrive = procesarTextoOCRParaDrive;
+  window.normalizarSegmentoDrive = normalizarSegmentoDrive;
+}
+
+// Exportar para pruebas unitarias en Node.js
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    VaultGoogleDrive,
+    procesarTextoOCRParaDrive,
+    normalizarSegmentoDrive
+  };
+}

@@ -28,3 +28,4 @@ El usuario reporta:
 5. **Preservación Total de Pruebas y Zero-Knowledge:**
    - Mantener el 100% de las pruebas automatizadas (76/76 o más).
    - Versionar Service Worker a `v26`.
+

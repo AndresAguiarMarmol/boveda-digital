@@ -35,3 +35,4 @@
 - Actualizar `memory.md` (Secciones 1, 2 y 3).
 - Commit y push a GitHub (`main`).
 - Desplegar en Google Cloud Run (`gcloud run deploy`).
+

@@ -907,7 +907,7 @@ const server = http.createServer(async (req, res) => {
           title: body.title || 'Documento Cifrado',
           expiry_date: body.expiry_date || null,
           created_at: body.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: body.updated_at || new Date().toISOString()
         };
 
         const existingIdx = userDocs.findIndex(d => d.id === docId);
@@ -972,7 +972,7 @@ const server = http.createServer(async (req, res) => {
               userDocs[idx] = { ...userDocs[idx], ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() };
             }
           } else {
-            // Spec 015 & 017: Evitar que un dispositivo inserte un segundo registro con distinto ID para el mismo (category, title)
+            // Spec 015, 017 & 023: Evitar registros duplicados para el mismo (category, title) actualizando si es más reciente
             const incCat = String(doc.category || 'identidad').trim().toLowerCase();
             const incTitle = String(doc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const dupIdx = userDocs.findIndex(
@@ -981,6 +981,12 @@ const server = http.createServer(async (req, res) => {
             );
             if (dupIdx < 0) {
               userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
+            } else {
+              const existingTime = new Date(userDocs[dupIdx].updated_at || 0).getTime();
+              const incomingTime = new Date(doc.updated_at || 0).getTime();
+              if (incomingTime >= existingTime) {
+                userDocs[dupIdx] = { ...userDocs[dupIdx], ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() };
+              }
             }
           }
         });

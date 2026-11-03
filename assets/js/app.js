@@ -1410,6 +1410,73 @@ class BovedaApp {
   }
 
   /**
+   * Optimiza y redimensiona fotos o imágenes capturadas con la cámara del celular
+   * reduciendo drásticamente el peso (a ~300KB) sin perder legibilidad textual en documentos (Spec 023)
+   * @param {File} file
+   * @returns {Promise<File|Blob>}
+   */
+  async optimizeImageAttachment(file) {
+    if (!file || !file.type || !file.type.startsWith('image/')) return file;
+    if (file.size < 200 * 1024) return file; // Si ya pesa menos de 200KB no requiere compresión
+
+    return new Promise((resolve) => {
+      try {
+        if (typeof FileReader === 'undefined' || typeof document === 'undefined') {
+          return resolve(file);
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              const MAX_DIM = 1600; // Resolución óptima para escaneos y lectura nítida
+              let width = img.width;
+              let height = img.height;
+              if (width > height) {
+                if (width > MAX_DIM) {
+                  height = Math.round(height * (MAX_DIM / width));
+                  width = MAX_DIM;
+                }
+              } else {
+                if (height > MAX_DIM) {
+                  width = Math.round(width * (MAX_DIM / height));
+                  height = MAX_DIM;
+                }
+              }
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, width, height);
+
+              canvas.toBlob((blob) => {
+                if (blob && blob.size < file.size) {
+                  const cleanName = (file.name || 'foto_documento').replace(/\.[^.]+$/, '.jpg');
+                  const optimizedFile = new File([blob], cleanName, {
+                    type: 'image/jpeg',
+                    lastModified: Date.now()
+                  });
+                  resolve(optimizedFile);
+                } else {
+                  resolve(file);
+                }
+              }, 'image/jpeg', 0.82);
+            } catch {
+              resolve(file);
+            }
+          };
+          img.onerror = () => resolve(file);
+          img.src = e.target.result;
+        };
+        reader.onerror = () => resolve(file);
+        reader.readAsDataURL(file);
+      } catch {
+        resolve(file);
+      }
+    });
+  }
+
+  /**
    * Guarda un nuevo documento cifrado (con protección anti-duplicado y bloqueo de doble envío)
    */
   async handleSaveNewDocument(formData) {
@@ -1455,7 +1522,9 @@ class BovedaApp {
       }
 
       if (fileAttachment && fileAttachment.size > 0) {
-        attachmentCipher = await window.vaultCrypto.encryptFile(window.vaultAuth.masterKey, fileAttachment);
+        // Spec 023: Optimizar imágenes de cámara móvil antes del cifrado para prevenir saturación y timeouts
+        const fileToEncrypt = await this.optimizeImageAttachment(fileAttachment);
+        attachmentCipher = await window.vaultCrypto.encryptFile(window.vaultAuth.masterKey, fileToEncrypt);
         if (driveArchiveMeta && driveArchiveMeta.nombre_archivo && attachmentCipher) {
           attachmentCipher.driveFileName = driveArchiveMeta.nombre_archivo;
           attachmentCipher.drivePath = driveArchiveMeta.ruta_drive;
@@ -1493,6 +1562,51 @@ class BovedaApp {
 
       await window.vaultStorage.saveDocument(docRecord);
       await window.vaultStorage.logAuditEvent(window.vaultAuth.currentUser.sub, 'DOC_CREATED', { docId, category });
+
+      // Spec 023: Despacho directo inmediato a Cloud Run (POST /api/v1/documents) para propagación instantánea Celular ↔ PC
+      if (window.vaultAuth) {
+        try {
+          let token = window.vaultAuth.accessToken;
+          if (!token || token.includes('mock_signature')) {
+            const refreshed = await window.vaultAuth.refreshSession();
+            if (refreshed) token = window.vaultAuth.accessToken;
+          }
+          if (token && window.vaultAuth.apiBaseUrl) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 12000);
+            const res = await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify(docRecord),
+              signal: controller.signal
+            }).catch(() => null);
+            clearTimeout(timeout);
+            if (res && res.status === 401) {
+              const refreshed = await window.vaultAuth.refreshSession();
+              if (refreshed) {
+                token = window.vaultAuth.accessToken;
+                await fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  },
+                  body: JSON.stringify(docRecord)
+                }).catch(() => null);
+              }
+            }
+            if (res && (res.ok || res.status === 201)) {
+              docRecord.is_synced = true;
+              await window.vaultStorage.markDocumentSynced(docRecord.id, true).catch(() => {});
+            }
+          }
+        } catch (netErr) {
+          console.warn('[BovedaApp] Despacho directo diferido a sincronización en lote:', netErr);
+        }
+      }
 
       // Asegurar que la gaveta correspondiente se abra para ver el nuevo expediente
       this.openDrawers.add(category);
@@ -3225,8 +3339,10 @@ class BovedaApp {
       const combinedDeletedIds = Array.from(new Set([...deletedIds, ...explicitDeleted]));
       const deletedSet = new Set(combinedDeletedIds);
       const genuineDeletedIds = combinedDeletedIds.filter(id => id && !String(id).startsWith('doc_demo_') && !['doc_demo_pasaporte', 'doc_demo_licencia', 'doc_demo_tarjeta'].includes(id));
+      // Spec 023: Ordenar por updated_at descendente para preservar siempre la versión más reciente al sincronizar
+      const sortedRaw = [...rawLocalDocs].sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
       const seenSyncKeys = new Set();
-      const localDocs = rawLocalDocs.filter(d => {
+      const localDocs = sortedRaw.filter(d => {
         if (!d || !d.id || deletedSet.has(d.id) || String(d.id).startsWith('doc_demo_')) return false;
         const k = `${String(d.category || 'identidad').trim().toLowerCase()}|${String(d.title || '').trim().toLowerCase()}`;
         if (seenSyncKeys.has(k)) return false;
@@ -3596,6 +3712,18 @@ class BovedaApp {
         triggerReactiveCloudSync();
       }
     });
+
+    // Spec 023: Temporizador periódico de auto-sincronización en segundo plano (cada 25s)
+    // Garantiza que cuando se cargue un documento desde el celular, este se replique automáticamente en el PC
+    // mientras la pestaña permanezca abierta, sin requerir recargar ni cambiar de ventana.
+    if (!this._periodicSyncTimer && typeof setInterval !== 'undefined') {
+      this._periodicSyncTimer = setInterval(() => {
+        if (this._isDeletingDoc || this._isSyncingWithCloud || this._isSavingNewDoc) return;
+        if (this.activeView === 'dashboard' && window.vaultAuth?.currentUser) {
+          this.syncWithCloud(true);
+        }
+      }, 25000);
+    }
   }
 
   /**

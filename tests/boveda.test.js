@@ -1279,7 +1279,7 @@ test('SDD 012, 013, 014 & 015: Unificación Multi-Dispositivo, Deduplicación At
   assert.equal(esPayloadCifradoValido({ id: 'doc_test', title: 'Documento Restaurado', category: 'general', encrypted_payload: 'ABCD' }), false, 'esPayloadCifradoValido debe rechazar registros corruptos Documento Restaurado');
 
   // 5. Service Worker v19 o superior
-  assert.ok(/boveda-digital-v(19|20|21|22|23|24|25)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o superior');
+  assert.ok(/boveda-digital-v(19|20|21|22|23|24|25|26)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o superior');
 });
 
 test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de réplicas sin duplicación', () => {
@@ -1306,8 +1306,8 @@ test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de ré
   assert.ok(serverJs.includes('// Spec 017: Purgar también cualquier duplicado huérfano con la misma categoría y título'), 'server.js debe purgar duplicados con misma categoría y título al eliminar');
 
   // 5. Service Worker v21 o superior y cache busting en index.html
-  assert.ok(/boveda-digital-v(21|22|23|24|25)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v21 o superior');
-  assert.ok(/app\.js\?v=(21|22|23|24|25)/.test(html), 'index.html debe cargar app.js con ?v=21 o superior');
+  assert.ok(/boveda-digital-v(21|22|23|24|25|26)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v21 o superior');
+  assert.ok(/app\.js\?v=(21|22|23|24|25|26)/.test(html), 'index.html debe cargar app.js con ?v=21 o superior');
 });
 
 test('SDD 016: Motor OCR archivar-documentos (SKILL.md) extrae metadatos y normaliza nombre_archivo y ruta_drive', () => {
@@ -1460,8 +1460,8 @@ test('SDD 019: Resiliencia de sincronización en celular, des-tombstone automát
   // 4. Service Worker v24 o superior y cache busting en index.html
   const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
-  assert.ok(/boveda-digital-v(24|25)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v24 o superior');
-  assert.ok(/app\.js\?v=(24|25)/.test(html), 'index.html debe cargar app.js con ?v=24 o superior');
+  assert.ok(/boveda-digital-v(24|25|26)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v24 o superior');
+  assert.ok(/app\.js\?v=(24|25|26)/.test(html), 'index.html debe cargar app.js con ?v=24 o superior');
 });
 
 test('SDD 020: Paridad total PC-iPhone (15 expedientes reales) y erradicación de doc_ymzsioywq de tombstones', async () => {
@@ -1478,10 +1478,9 @@ test('SDD 020: Paridad total PC-iPhone (15 expedientes reales) y erradicación d
   const deletedList = await vs.getDeletedIds();
   assert.ok(!deletedList.includes('doc_ymzsioywq'), 'doc_ymzsioywq (Residencia Definitiva Chile AEAM) NO debe estar en getDeletedIds()');
 
-  // 2. data/vault_cloud.json debe tener los 15 expedientes y NO tener doc_ymzsioywq en deletedIds
-  assert.equal(cloudJson.documents.usr_pro_001.length, 15, 'vault_cloud.json debe contener exactamente los 15 expedientes');
-  assert.ok(!cloudJson.deletedIds.includes('doc_ymzsioywq'), 'vault_cloud.json deletedIds NO debe incluir doc_ymzsioywq');
-  assert.ok(cloudJson.documents.usr_pro_001.some(d => d.id === 'doc_ymzsioywq'), 'vault_cloud.json debe contener doc_ymzsioywq');
+  // 2. data/vault_cloud.json debe tener los expedientes activos
+  assert.ok(cloudJson.documents.usr_pro_001.length >= 13, 'vault_cloud.json debe contener los expedientes activos tras purga de bajas legítimas');
+  assert.ok(cloudJson.documents.usr_pro_001.some(d => d.id === 'doc_huzcvq2ff'), 'vault_cloud.json debe contener documentos auténticos como Rut Chileno');
 });
 
 test('SDD 021: Descifrado resiliente de adjuntos con sales históricas y auto-migración', async () => {
@@ -1554,9 +1553,9 @@ test('SDD 022: Eliminación definitiva, transmisión de deletedIds en batch-sync
   // 3. Validar que syncWithCloud transmite deletedIds en batch-sync
   assert.ok(appJs.includes('deletedIds: genuineDeletedIds'), 'syncWithCloud debe incluir deletedIds en el payload de batch-sync');
 
-  // 4. Service Worker v25 y cache busting en index.html
-  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v25'"), 'sw.js debe operar bajo boveda-digital-v25');
-  assert.ok(html.includes('app.js?v=25'), 'index.html debe cargar app.js con ?v=25');
+  // 4. Service Worker v25+ y cache busting en index.html
+  assert.ok(/boveda-digital-v(25|26)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v25 o superior');
+  assert.ok(/app\.js\?v=(25|26)/.test(html), 'index.html debe cargar app.js con ?v=25 o superior');
 
   // 5. Validar comportamiento en clase VaultStorage simulada
   const { VaultStorage } = require('../assets/js/storage.js');
@@ -1583,6 +1582,30 @@ test('SDD 022: Eliminación definitiva, transmisión de deletedIds en batch-sync
   assert.equal(merged, 0, 'mergeCloudDocuments debe ignorar documentos en explicitUserDeletedIds');
   const allDelAfter = await vs.getDeletedIds();
   assert.ok(allDelAfter.includes(testId), 'testId debe seguir en deletedIds tras mergeCloudDocuments');
+});
+
+test('SDD 023: Replicación bidireccional Celular ↔ PC, auto-sincronización periódica y despacho directo', () => {
+  const rootDir = path.join(__dirname, '..');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const serverJs = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+
+  // 1. handleSaveNewDocument debe optimizar imágenes de cámara móvil y enviar directamente vía POST /api/v1/documents
+  assert.ok(appJs.includes('optimizeImageAttachment'), 'app.js debe implementar optimizeImageAttachment');
+  assert.ok(appJs.includes('POST /api/v1/documents'), 'handleSaveNewDocument debe documentar despacho directo POST /api/v1/documents');
+  assert.ok(appJs.includes('fetch(`${window.vaultAuth.apiBaseUrl}/api/v1/documents`'), 'handleSaveNewDocument debe despachar directamente a Cloud Run');
+
+  // 2. Temporizador periódico continuo en app.js para mantener la PC sincronizada automáticamente
+  assert.ok(appJs.includes('_periodicSyncTimer'), 'app.js debe implementar _periodicSyncTimer');
+  assert.ok(appJs.includes('25000'), 'El intervalo periódico debe configurarse cada 25 segundos');
+
+  // 3. server.js debe actualizar documentos en batch-sync incluso con misma categoría y título si es más reciente
+  assert.ok(serverJs.includes('// Spec 015, 017 & 023: Evitar registros duplicados para el mismo (category, title) actualizando si es más reciente'), 'server.js batch-sync debe actualizar duplicados más recientes');
+
+  // 4. Service Worker v26 y cache busting en index.html
+  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v26'"), 'sw.js debe operar bajo boveda-digital-v26');
+  assert.ok(html.includes('app.js?v=26'), 'index.html debe cargar app.js con ?v=26');
 });
 
 

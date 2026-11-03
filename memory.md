@@ -70,6 +70,12 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 2. Decisiones vigentes
 
+- **Replicación Bidireccional Celular ↔ PC y Auto-Sincronización Periódica en Tiempo Real (Spec 023):**
+  - *Despacho Directo en Guardado de Documentos:* Al guardar un documento nuevo (`handleSaveNewDocument`), la app ejecuta inmediatamente una petición `POST /api/v1/documents` a Cloud Run con renovación proactiva de sesión (`refreshSession`) si el token ha expirado. Si la red móvil se desconecta temporalmente, el documento permanece seguro en `IndexedDB` y se sincroniza en la siguiente reconexión.
+  - *Optimización y Compresión de Fotos de Cámara Móvil:* La función `optimizeImageAttachment(file)` redimensiona fotos capturadas con cámaras de alta resolución (8-15 MB) a un máximo de 1600px y formato JPEG al 82% mediante Canvas HTML5 antes del cifrado AES-256-GCM. Esto reduce drásticamente el payload cifrado de >20MB a ~300-600KB, eliminando fallos por timeout en conexiones móviles.
+  - *Temporizador Continuo de Auto-Sincronización en PC:* La PC mantiene un temporizador continuo en segundo plano (`_periodicSyncTimer`) cada 25 segundos dentro de `bindEvents()`. Esto garantiza que la PC consulte y aplique automáticamente los documentos subidos desde el celular sin requerir recargar la pestaña ni perder el foco de la ventana.
+  - *Resiliencia de Conexión en `auth.js`:* `checkServerConnection` amplía el timeout de verificación a 8 segundos con 1 reintento para absorber cold starts en Cloud Run.
+  - *Service Worker v26:* `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v26'` con versionado `app.js?v=26` en `index.html`.
 - **Eliminación Definitiva Multi-Dispositivo y Sincronización Bidireccional de Bajas (Spec 022):**
   - *Tombstones Explícitos de Usuario (`explicitUserDeletedIds`):* Al eliminar un expediente en cliente (`deleteDocument`), el identificador se persiste en `boveda_explicit_user_deleted_ids`. En `mergeCloudDocuments()`, los IDs explícitamente eliminados por el usuario jamás se des-tombstonean ni se re-insertan en `IndexedDB`, neutralizando la resurrección de documentos. Al restaurar intencionalmente mediante un respaldo JSON auténtico (`importBackupData`), los IDs restaurados se remueven de dicho conjunto.
   - *Transmisión Bidireccional de Bajas en Sincronización en Lote (`POST /api/v1/documents/batch-sync`):* `syncWithCloud()` transmite el array `deletedIds` al endpoint de sincronización masiva en Cloud Run. Si la petición puntual `DELETE /api/v1/documents/:id` fallara por interrupción de señal en móvil, expiración de token o modo offline, la siguiente sincronización purga definitivamente el expediente en la base de datos del backend (`db.documents`) y persiste el tombstone en `db.deletedIds`.
@@ -129,6 +135,25 @@ Compatible con el backend centralizado de la app de Halterofilia:
 ---
 
 ## 3. Historial de cambios
+
+### 2026-11-03 — Spec 023: Replicación Bidireccional Celular ↔ PC y Auto-Sincronización Periódica (v26)
+- **Diagnóstico de Causa Raíz de Desincronización Celular → PC:**
+  - *Causa 1 (Ausencia de sondeo periódico en PC):* En el celular, `syncWithCloud()` se disparaba automáticamente cada vez que el usuario desbloqueaba la pantalla o cambiaba de app mediante los eventos `window.focus` y `document.visibilitychange`. En la PC, la pestaña del navegador permanecía abierta y enfocada indefinidamente, por lo que nunca se disparaban estos eventos y la PC carecía de un temporizador de sondeo periódico (`setInterval`), permaneciendo desactualizada hasta que el usuario refrescara la página o sincronizara manualmente.
+  - *Causa 2 (Ausencia de despacho directo y tamaño de imágenes en celular):* Al crear un nuevo documento (`handleSaveNewDocument`), solo se disparaba `syncWithCloud(true)` en lote. Si el usuario capturaba una foto con la cámara del celular (8-15 MB), al cifrarse en Base64 alcanzaba 20-30 MB, excediendo límites o sufriendo micro-cortes y cold start timeouts (4s en `checkServerConnection`) sin reintento inmediato.
+- **Correcciones Quirúrgicas Implementadas:**
+  - En `assets/js/app.js`:
+    1. Implementado `optimizeImageAttachment(file)` usando Canvas HTML5 para escalar fotos de cámara a un máximo de 1600px en JPEG 82% antes de cifrar.
+    2. Incorporado despacho directo mediante `POST /api/v1/documents` dentro de `handleSaveNewDocument()` con renovación proactiva de sesión y verificación de conectividad.
+    3. Implementado `_periodicSyncTimer` ejecutándose cada 25 segundos en `bindEvents()` para garantizar sincronización continua y desatendida en la PC.
+    4. En `syncWithCloud()`, ordenación de `rawLocalDocs` por `updated_at` descendente antes de deduplicar para preservar la versión más reciente.
+  - En `assets/js/auth.js`:
+    1. Aumentado el timeout de `checkServerConnection` a 8 segundos con 1 reintento para soportar cold starts de Google Cloud Run.
+  - En `server.js`:
+    1. En `POST /api/v1/documents/batch-sync`, actualización de documentos con misma categoría y título si el documento entrante tiene `updated_at` igual o posterior.
+  - En `sw.js` e `index.html`:
+    1. Service Worker bump a `boveda-digital-v26` y cache-busting `?v=26`.
+- **Suite de Pruebas:**
+  - 78/78 pruebas pasando al 100% en verde (`tests/boveda.test.js` y `tests/server.test.js`).
 
 ### 2026-10-31 — Spec 022: Eliminación Definitiva Multi-Dispositivo y Sincronización Bidireccional de Bajas (v25)
 - **Diagnóstico de Causa Raíz de Resurrección de Documentos al Borrar desde Celular:**

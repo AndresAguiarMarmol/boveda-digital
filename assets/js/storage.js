@@ -433,11 +433,11 @@ class VaultStorage {
       }
       // Spec 015 & 017: Eliminar de IndexedDB cualquier copia local redundante con distinto ID pero mismo (category, title) que el documento de la nube con tombstone
       const cloudCat = String(doc.category || 'identidad').trim().toLowerCase();
-      const cloudTitle = String(doc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const cloudTitle = String(doc.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
       for (const localDoc of existingAll) {
         if (localDoc && localDoc.id && localDoc.id !== doc.id) {
           const localCat = String(localDoc.category || 'identidad').trim().toLowerCase();
-          const localTitle = String(localDoc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const localTitle = String(localDoc.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
           if (localCat === cloudCat && localTitle === cloudTitle) {
             try {
               await this.deleteDocument(localDoc.id, true);
@@ -446,6 +446,33 @@ class VaultStorage {
         }
       }
     }
+
+    // Spec 024: Purga de expedientes huérfanos locales que ya no existen en la nube
+    // Si la nube nos entregó una lista válida de documentos activos (incomingActiveIds.length > 0)
+    // y un documento local en IndexedDB tiene is_synced: true, pero ya no existe en la nube
+    // ni por ID ni por (category, title), significa que fue eliminado remotamente desde otro dispositivo.
+    const cloudKeySet = new Set(validCloudDocs.map(d => {
+      const c = String(d.category || 'identidad').trim().toLowerCase();
+      const t = String(d.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+      return `${c}|${t}`;
+    }));
+    const cloudIdSet = new Set(validCloudDocs.map(d => d.id));
+
+    if (validCloudDocs.length > 0) {
+      for (const localDoc of existingAll) {
+        if (!localDoc || !localDoc.id) continue;
+        const locCat = String(localDoc.category || 'identidad').trim().toLowerCase();
+        const locTitle = String(localDoc.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+        const locKey = `${locCat}|${locTitle}`;
+
+        if (localDoc.is_synced && !cloudIdSet.has(localDoc.id) && !cloudKeySet.has(locKey)) {
+          try {
+            await this.deleteDocument(localDoc.id, false);
+          } catch (e) {}
+        }
+      }
+    }
+
     return mergedCount;
   }
 

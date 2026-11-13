@@ -416,24 +416,34 @@ class BovedaApp {
       }
     }
 
-    // Spec 015 & 017: Deduplicación atómica por ID y por (category, title) + limpieza de copias redundantes en IndexedDB con tombstone
+    // Spec 015, 017 & 024: Deduplicación atómica estricta por (category, title) normalizado sin depender de doc_number
     const seenIds = new Set();
     const seenByKey = new Map();
     for (const doc of unlockedList) {
       if (!doc || !doc.id || seenIds.has(doc.id)) continue;
       seenIds.add(doc.id);
       const normCat = String(doc.category || 'identidad').trim().toLowerCase();
-      const normTitle = String(doc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
-      const normDocNum = String(doc.doc_number || '').trim().toLowerCase().replace(/[\s\.\-]+/g, '');
-      const dedupKey = normDocNum ? `${normCat}|${normTitle}|${normDocNum}` : `${normCat}|${normTitle}`;
+      const normTitle = String(doc.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+      // Spec 024: La clave única de deduplicación es estrictamente categoría y título normalizados.
+      // Erradica discrepancias donde una copia local en PC con o sin número de documento generaba un expediente extra.
+      const dedupKey = `${normCat}|${normTitle}`;
 
       if (!seenByKey.has(dedupKey)) {
         seenByKey.set(dedupKey, doc);
       } else {
         const prev = seenByKey.get(dedupKey);
-        const isNewer = new Date(doc.updated_at || 0).getTime() > new Date(prev.updated_at || 0).getTime();
-        const docToKeep = isNewer ? doc : prev;
-        const redundantDoc = isNewer ? prev : doc;
+        const prevHasAttachment = prev.attachment && prev.attachment.ciphertext;
+        const docHasAttachment = doc.attachment && doc.attachment.ciphertext;
+        let isBetter = false;
+        if (docHasAttachment && !prevHasAttachment) {
+          isBetter = true;
+        } else if (!docHasAttachment && prevHasAttachment) {
+          isBetter = false;
+        } else {
+          isBetter = new Date(doc.updated_at || 0).getTime() >= new Date(prev.updated_at || 0).getTime();
+        }
+        const docToKeep = isBetter ? doc : prev;
+        const redundantDoc = isBetter ? prev : doc;
         seenByKey.set(dedupKey, docToKeep);
 
         // Purgar de IndexedDB y registrar tombstone para evitar reaparición
@@ -3344,7 +3354,9 @@ class BovedaApp {
       const seenSyncKeys = new Set();
       const localDocs = sortedRaw.filter(d => {
         if (!d || !d.id || deletedSet.has(d.id) || String(d.id).startsWith('doc_demo_')) return false;
-        const k = `${String(d.category || 'identidad').trim().toLowerCase()}|${String(d.title || '').trim().toLowerCase()}`;
+        const normC = String(d.category || 'identidad').trim().toLowerCase();
+        const normT = String(d.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+        const k = `${normC}|${normT}`;
         if (seenSyncKeys.has(k)) return false;
         seenSyncKeys.add(k);
         return true;

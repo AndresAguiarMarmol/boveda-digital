@@ -70,6 +70,15 @@ Compatible con el backend centralizado de la app de Halterofilia:
 
 ## 2. Decisiones vigentes
 
+- **Paridad de 15 Documentos PC-Celular y Bloqueo de Desplazamiento Horizontal en Android (Spec 024):**
+  - *Paridad y Deduplicación sin normDocNum:* En `loadAndRenderDocuments()` (`assets/js/app.js`), la clave de deduplicación se consolidó estrictamente en `${normCat}|${normTitle}` con normalización diacrítica (`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ')`), desvinculándola de variaciones en el número de documento. Se prioriza el documento con archivo adjunto o fecha de actualización más reciente, y cualquier réplica redundante se elimina localmente de `IndexedDB`.
+  - *Purga de Huérfanos Locales en `mergeCloudDocuments()` (`assets/js/storage.js`):* Al sincronizar con la nube, si un documento local marcado como `is_synced` ya no existe en la colección activa de la nube ni por ID ni por `(category, title)` normalizado, se purga de `IndexedDB` para erradicar discrepancias numéricas derivadas de bajas ejecutadas en otros dispositivos.
+  - *Bloqueo Estricto de Desplazamiento Horizontal en Android:* En `assets/css/vault.css`, se configuran reglas estrictas para `html, body` (`overflow-x: hidden !important; width: 100% !important; max-width: 100vw !important; overscroll-behavior-x: none; touch-action: pan-y pinch-zoom;`), impidiendo que gestos predictivos de Android deslicen la ventana.
+  - *Prevención de Desborde por Animación de Gavetas:* En móviles (`@media (max-width: 768px)`), el estado `.drawer-unit.is-open` neutraliza la escala horizontal (`transform: translateY(-2px) !important;`), evitando que la expansión supere el ancho de la pantalla (`100vw`).
+  - *Header Móvil Compacto y Viewport Fit:* En `index.html`, la barra superior oculta textos secundarios en pantallas angostas (`hidden md:inline` para nombre y `hidden sm:inline` para estado de licencia) con espaciado compacto (`gap-1 sm:gap-2`), y se configura `viewport-fit=cover` con `maximum-scale=5.0`.
+  - *Service Worker v27 y Cache-Busting:* `sw.js` opera bajo `CACHE_NAME = 'boveda-digital-v27'` y los recursos críticos en `index.html` se cargan con `?v=27` (`app.js?v=27`, `vault.css?v=27`).
+
+
 - **Replicación Bidireccional Celular ↔ PC y Auto-Sincronización Periódica en Tiempo Real (Spec 023):**
   - *Despacho Directo en Guardado de Documentos:* Al guardar un documento nuevo (`handleSaveNewDocument`), la app ejecuta inmediatamente una petición `POST /api/v1/documents` a Cloud Run con renovación proactiva de sesión (`refreshSession`) si el token ha expirado. Si la red móvil se desconecta temporalmente, el documento permanece seguro en `IndexedDB` y se sincroniza en la siguiente reconexión.
   - *Optimización y Compresión de Fotos de Cámara Móvil:* La función `optimizeImageAttachment(file)` redimensiona fotos capturadas con cámaras de alta resolución (8-15 MB) a un máximo de 1600px y formato JPEG al 82% mediante Canvas HTML5 antes del cifrado AES-256-GCM. Esto reduce drásticamente el payload cifrado de >20MB a ~300-600KB, eliminando fallos por timeout en conexiones móviles.
@@ -135,6 +144,22 @@ Compatible con el backend centralizado de la app de Halterofilia:
 ---
 
 ## 3. Historial de cambios
+
+### 2026-11-12 — Spec 024: Paridad de 15 Documentos PC-Celular y Bloqueo de Desplazamiento Horizontal en Android (v27)
+- **Diagnóstico de Causa Raíz:**
+  - *Problema 1 (Discrepancia 16 docs en PC vs 15 docs en Celular):* En `loadAndRenderDocuments()`, la clave de deduplicación incluía el número de documento (`normDocNum`). Si una réplica local en la PC carecía del número o difería en tildes, la clave discordante impedía la unificación visual. Asimismo, si un documento `is_synced` fue eliminado desde el celular pero su ID exacto no estaba en `deletedIds` (o fue borrado por categoría y título), el PC mantenía el registro local huérfano en `IndexedDB`.
+  - *Problema 2 (Desplazamiento horizontal de pantalla en Android con SO reciente):* En Android 14/15, la barra de navegación contenía 7 botones/badges en un contenedor flex sin salto de línea que medía >720px de ancho en viewports móviles de 360-412px. Además, la animación `.drawer-unit.is-open` aplicaba `scale(1.008)` superando los márgenes de `100vw`, y faltaban directivas de contención `overflow-x: hidden`, `overscroll-behavior-x: none` y `touch-action: pan-y pinch-zoom` en `html, body`.
+- **Correcciones Quirúrgicas Implementadas:**
+  - En `assets/js/storage.js`: en `mergeCloudDocuments()`, normalización de tildes con `.normalize('NFD')` y purga automática de huérfanos locales marcados como sincronizados que no existan en la nube activa.
+  - En `assets/js/app.js`: consolidada la deduplicación en `${normCat}|${normTitle}` sin `normDocNum` con normalización diacrítica y purga de réplicas redundantes en `IndexedDB`.
+  - En `server.js`: normalización de títulos con `normalize('NFD')` en `batch-sync` y `DELETE /api/v1/documents/:id`.
+  - En `assets/css/vault.css`: contención estricta en `html, body` (`overflow-x: hidden !important`, `overscroll-behavior-x: none`, `touch-action: pan-y pinch-zoom`), eliminación de `scale` en `.drawer-unit.is-open` para móviles y contención de cabecera/pie.
+  - En `index.html`: `viewport-fit=cover`, navbar responsivo adaptativo para móviles, y cache-busting `?v=27` en scripts y estilos.
+  - En `sw.js`: actualización a `boveda-digital-v27`.
+  - En `data/vault_cloud.json`: sincronización y verificación íntegra de los 15 documentos auténticos de Cloud Run.
+- **Suite de Pruebas:**
+  - 79/79 pruebas pasando al 100% en verde (`tests/boveda.test.js` y `tests/server.test.js`).
+
 
 ### 2026-11-03 — Spec 023: Replicación Bidireccional Celular ↔ PC y Auto-Sincronización Periódica (v26)
 - **Diagnóstico de Causa Raíz de Desincronización Celular → PC:**

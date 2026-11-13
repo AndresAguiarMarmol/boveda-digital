@@ -972,12 +972,12 @@ const server = http.createServer(async (req, res) => {
               userDocs[idx] = { ...userDocs[idx], ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() };
             }
           } else {
-            // Spec 015, 017 & 023: Evitar registros duplicados para el mismo (category, title) actualizando si es más reciente
+            // Spec 015, 017 & 023: Evitar registros duplicados para el mismo (category, title) actualizando si es más reciente (Spec 024 con normalización diacrítica)
             const incCat = String(doc.category || 'identidad').trim().toLowerCase();
-            const incTitle = String(doc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            const incTitle = String(doc.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
             const dupIdx = userDocs.findIndex(
               d => String(d.category || 'identidad').trim().toLowerCase() === incCat &&
-                   String(d.title || '').trim().toLowerCase().replace(/\s+/g, ' ') === incTitle
+                   String(d.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ') === incTitle
             );
             if (dupIdx < 0) {
               userDocs.push({ ...doc, user_id: partition, updated_at: doc.updated_at || new Date().toISOString() });
@@ -1024,21 +1024,21 @@ const server = http.createServer(async (req, res) => {
           const qCat = parsedUrl.searchParams.get('category');
           const qTitle = parsedUrl.searchParams.get('title');
           if (qCat) targetCat = qCat.trim().toLowerCase();
-          if (qTitle) targetTitle = qTitle.trim().toLowerCase().replace(/\s+/g, ' ');
+          if (qTitle) targetTitle = qTitle.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
         } catch (e) {}
 
         if (targetDoc) {
           if (!targetCat) targetCat = String(targetDoc.category || 'identidad').trim().toLowerCase();
-          if (!targetTitle) targetTitle = String(targetDoc.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (!targetTitle) targetTitle = String(targetDoc.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
         }
 
         userDocs = userDocs.filter(d => {
           if (!d || !d.id) return false;
           if (d.id === docId) return false;
-          // Spec 017: Purgar también cualquier duplicado huérfano con la misma categoría y título
+          // Spec 017: Purgar también cualquier duplicado huérfano con la misma categoría y título (Spec 024 normalizados)
           if (targetCat && targetTitle) {
             const dCat = String(d.category || 'identidad').trim().toLowerCase();
-            const dTitle = String(d.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            const dTitle = String(d.title || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
             if (dCat === targetCat && dTitle === targetTitle) {
               if (db.deletedIds) db.deletedIds.add(d.id);
               return false;

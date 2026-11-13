@@ -1279,7 +1279,7 @@ test('SDD 012, 013, 014 & 015: Unificación Multi-Dispositivo, Deduplicación At
   assert.equal(esPayloadCifradoValido({ id: 'doc_test', title: 'Documento Restaurado', category: 'general', encrypted_payload: 'ABCD' }), false, 'esPayloadCifradoValido debe rechazar registros corruptos Documento Restaurado');
 
   // 5. Service Worker v19 o superior
-  assert.ok(/boveda-digital-v(19|20|21|22|23|24|25|26)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o superior');
+  assert.ok(/boveda-digital-v(19|20|21|22|23|24|25|26|27)/.test(swJs), 'sw.js debe estar en versión boveda-digital-v19 o superior');
 });
 
 test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de réplicas sin duplicación', () => {
@@ -1306,8 +1306,8 @@ test('SDD 017: Eliminación definitiva, cerrojo anti-concurrencia y purga de ré
   assert.ok(serverJs.includes('// Spec 017: Purgar también cualquier duplicado huérfano con la misma categoría y título'), 'server.js debe purgar duplicados con misma categoría y título al eliminar');
 
   // 5. Service Worker v21 o superior y cache busting en index.html
-  assert.ok(/boveda-digital-v(21|22|23|24|25|26)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v21 o superior');
-  assert.ok(/app\.js\?v=(21|22|23|24|25|26)/.test(html), 'index.html debe cargar app.js con ?v=21 o superior');
+  assert.ok(/boveda-digital-v(21|22|23|24|25|26|27)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v21 o superior');
+  assert.ok(/app\.js\?v=(21|22|23|24|25|26|27)/.test(html), 'index.html debe cargar app.js con ?v=21 o superior');
 });
 
 test('SDD 016: Motor OCR archivar-documentos (SKILL.md) extrae metadatos y normaliza nombre_archivo y ruta_drive', () => {
@@ -1460,8 +1460,8 @@ test('SDD 019: Resiliencia de sincronización en celular, des-tombstone automát
   // 4. Service Worker v24 o superior y cache busting en index.html
   const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
-  assert.ok(/boveda-digital-v(24|25|26)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v24 o superior');
-  assert.ok(/app\.js\?v=(24|25|26)/.test(html), 'index.html debe cargar app.js con ?v=24 o superior');
+  assert.ok(/boveda-digital-v(24|25|26|27)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v24 o superior');
+  assert.ok(/app\.js\?v=(24|25|26|27)/.test(html), 'index.html debe cargar app.js con ?v=24 o superior');
 });
 
 test('SDD 020: Paridad total PC-iPhone (15 expedientes reales) y erradicación de doc_ymzsioywq de tombstones', async () => {
@@ -1554,8 +1554,8 @@ test('SDD 022: Eliminación definitiva, transmisión de deletedIds en batch-sync
   assert.ok(appJs.includes('deletedIds: genuineDeletedIds'), 'syncWithCloud debe incluir deletedIds en el payload de batch-sync');
 
   // 4. Service Worker v25+ y cache busting en index.html
-  assert.ok(/boveda-digital-v(25|26)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v25 o superior');
-  assert.ok(/app\.js\?v=(25|26)/.test(html), 'index.html debe cargar app.js con ?v=25 o superior');
+  assert.ok(/boveda-digital-v(25|26|27)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v25 o superior');
+  assert.ok(/app\.js\?v=(25|26|27)/.test(html), 'index.html debe cargar app.js con ?v=25 o superior');
 
   // 5. Validar comportamiento en clase VaultStorage simulada
   const { VaultStorage } = require('../assets/js/storage.js');
@@ -1601,11 +1601,47 @@ test('SDD 023: Replicación bidireccional Celular ↔ PC, auto-sincronización p
   assert.ok(appJs.includes('25000'), 'El intervalo periódico debe configurarse cada 25 segundos');
 
   // 3. server.js debe actualizar documentos en batch-sync incluso con misma categoría y título si es más reciente
-  assert.ok(serverJs.includes('// Spec 015, 017 & 023: Evitar registros duplicados para el mismo (category, title) actualizando si es más reciente'), 'server.js batch-sync debe actualizar duplicados más recientes');
+  assert.ok(serverJs.includes('Spec 015, 017 & 023: Evitar registros duplicados para el mismo (category, title) actualizando si es más reciente'), 'server.js batch-sync debe actualizar duplicados más recientes');
 
-  // 4. Service Worker v26 y cache busting en index.html
-  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v26'"), 'sw.js debe operar bajo boveda-digital-v26');
-  assert.ok(html.includes('app.js?v=26'), 'index.html debe cargar app.js con ?v=26');
+  // 4. Service Worker v26+ y cache busting en index.html
+  assert.ok(/boveda-digital-v(26|27)/.test(swJs), 'sw.js debe operar bajo boveda-digital-v26 o v27');
+  assert.ok(/app\.js\?v=(26|27)/.test(html), 'index.html debe cargar app.js con ?v=26 o v27');
+});
+
+test('SDD 024: Paridad de 15 documentos PC-Celular, purga de huérfanos y bloqueo de scroll horizontal en Android', () => {
+  const rootDir = path.join(__dirname, '..');
+  const appJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'app.js'), 'utf8');
+  const storageJs = fs.readFileSync(path.join(rootDir, 'assets', 'js', 'storage.js'), 'utf8');
+  const serverJs = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
+  const css = fs.readFileSync(path.join(rootDir, 'assets', 'css', 'vault.css'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  const cloudJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'data', 'vault_cloud.json'), 'utf8'));
+
+  // 1. data/vault_cloud.json contiene exactamente los 15 documentos auténticos
+  const userDocs = cloudJson.documents['usr_pro_001'] || cloudJson.documents;
+  assert.equal(userDocs.length, 15, 'vault_cloud.json debe contener exactamente 15 documentos auténticos');
+
+  // 2. app.js dedupKey sin normDocNum y con normalización diacrítica
+  assert.ok(appJs.includes('const dedupKey = `${normCat}|${normTitle}`;'), 'loadAndRenderDocuments debe unificar duplicados por categoría y título normalizado');
+  assert.ok(appJs.includes("normalize('NFD')"), 'app.js debe usar normalize NFD para prevenir discrepancias por tildes');
+
+  // 3. storage.js purga de huérfanos locales obsoletos en mergeCloudDocuments
+  assert.ok(storageJs.includes('// Spec 024: Purga de expedientes huérfanos locales que ya no existen en la nube'), 'storage.js debe purgar huérfanos obsoletos en mergeCloudDocuments');
+  assert.ok(storageJs.includes('await this.deleteDocument(localDoc.id, false);'), 'storage.js debe invocar deleteDocument localmente para huérfanos');
+
+  // 4. Bloqueo de desplazamiento horizontal en vault.css y prevención en Android
+  assert.ok(css.includes('overflow-x: hidden !important;'), 'vault.css debe forzar overflow-x: hidden en html y body');
+  assert.ok(css.includes('overscroll-behavior-x: none;'), 'vault.css debe desactivar overscroll-behavior-x para navegación por gestos');
+  assert.ok(css.includes('touch-action: pan-y pinch-zoom;'), 'vault.css debe limitar touch-action al eje vertical y pinch');
+  assert.ok(css.includes('.drawer-unit.is-open'), 'vault.css debe contemplar estado is-open de drawer-unit');
+  assert.ok(css.includes('transform: translateY(-2px) !important;'), 'vault.css debe neutralizar scale horizontal en móviles');
+
+  // 5. index.html viewport y cache-busting v27
+  assert.ok(html.includes('viewport-fit=cover'), 'index.html debe configurar viewport-fit=cover en meta viewport');
+  assert.ok(swJs.includes("CACHE_NAME = 'boveda-digital-v27'"), 'sw.js debe operar bajo boveda-digital-v27');
+  assert.ok(html.includes('app.js?v=27'), 'index.html debe cargar app.js con ?v=27');
+  assert.ok(html.includes('vault.css?v=27'), 'index.html debe cargar vault.css con ?v=27');
 });
 
 
